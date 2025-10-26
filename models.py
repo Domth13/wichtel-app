@@ -10,9 +10,26 @@ from typing import List, Optional, Dict
 from dataclasses import dataclass, asdict
 from config import USERS_FILE, EVENTS_FILE
 
-# WICHTIG: Lade .env ZUERST
-from dotenv import load_dotenv
-load_dotenv()
+# WICHTIG: Lade .env (lokal) oder Streamlit Secrets (Cloud)
+try:
+    import streamlit as st
+    # Prüfe ob wir in Streamlit Cloud sind (Secrets verfügbar)
+    if hasattr(st, 'secrets') and len(st.secrets) > 0:
+        # Streamlit Cloud: Lade aus st.secrets
+        for key in st.secrets:
+            if key not in os.environ:
+                os.environ[key] = str(st.secrets[key])
+    else:
+        # Lokal mit Streamlit aber ohne Secrets: Verwende .env
+        from dotenv import load_dotenv
+        load_dotenv()
+except (ImportError, AttributeError, FileNotFoundError):
+    # Kein Streamlit oder Fehler: Verwende .env
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()
+    except ImportError:
+        pass  # dotenv nicht installiert, verwende Umgebungsvariablen direkt
 
 
 @dataclass

@@ -9,7 +9,7 @@ from models import Event, DataManager
 from typing import List
 from dotenv import load_dotenv
 
-# Load environment variables from a .env file (if present)
+# Lade Umgebungsvariablen
 load_dotenv()
 
 
@@ -21,6 +21,7 @@ class EmailConfig:
     SENDER_PASSWORD = os.getenv("SENDER_PASSWORD", "dein_app_passwort")
     SMTP_SERVER = os.getenv("SMTP_SERVER", "smtp.gmail.com")
     SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+    APP_URL = os.getenv("APP_URL", "http://localhost:8501")
 
 
 def send_email(to_email: str, subject: str, body_html: str) -> bool:
@@ -152,17 +153,20 @@ def create_event_started_email(event_title: str, event_url: str) -> str:
     """
 
 
-def send_event_created_emails(event: Event, app_url: str = "http://localhost:8501") -> List[str]:
+def send_event_created_emails(event: Event, app_url: str = None) -> List[str]:
     """
     Sendet E-Mails an alle Teilnehmer nach Event-Erstellung
     
     Args:
         event: Das erstellte Event
-        app_url: URL zur Streamlit-App
+        app_url: URL zur Streamlit-App (optional, wird aus Config geladen wenn nicht angegeben)
     
     Returns:
         Liste der E-Mail-Adressen, an die erfolgreich versendet wurde
     """
+    if app_url is None:
+        app_url = EmailConfig.APP_URL
+    
     users = DataManager.load_users()
     successful_emails = []
     
@@ -178,17 +182,20 @@ def send_event_created_emails(event: Event, app_url: str = "http://localhost:850
     return successful_emails
 
 
-def send_event_started_emails(event: Event, app_url: str = "http://localhost:8501") -> List[str]:
+def send_event_started_emails(event: Event, app_url: str = None) -> List[str]:
     """
     Sendet E-Mails an alle Teilnehmer nach Event-Start
     
     Args:
         event: Das gestartete Event
-        app_url: URL zur Streamlit-App
+        app_url: URL zur Streamlit-App (optional, wird aus Config geladen wenn nicht angegeben)
     
     Returns:
         Liste der E-Mail-Adressen, an die erfolgreich versendet wurde
     """
+    if app_url is None:
+        app_url = EmailConfig.APP_URL
+    
     users = DataManager.load_users()
     successful_emails = []
     
