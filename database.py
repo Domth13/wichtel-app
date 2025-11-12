@@ -176,7 +176,7 @@ class MongoDataManager:
             collection.insert_many(event_docs)
     
     @staticmethod
-    def create_event(title: str, creator_id: str, participant_ids: List[str]) -> 'Event':
+    def create_event(title: str, creator_id: str, participant_ids: List[str], gift_value: str = "") -> 'Event':
         """Erstellt ein neues Event"""
         from models import Event
         
@@ -186,7 +186,8 @@ class MongoDataManager:
             created_by=creator_id,
             created_at=datetime.now().isoformat(),
             participant_ids=participant_ids,
-            assignments=[]
+            assignments=[],
+            gift_value=gift_value
         )
         
         collection = MongoDB.get_events_collection()

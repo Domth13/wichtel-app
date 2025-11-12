@@ -7,29 +7,70 @@ import uuid
 import os
 from datetime import datetime
 from typing import List, Optional, Dict
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
+from pathlib import Path
 from config import USERS_FILE, EVENTS_FILE
-
-# WICHTIG: Lade .env (lokal) oder Streamlit Secrets (Cloud)
 try:
-    import streamlit as st
-    # Prüfe ob wir in Streamlit Cloud sind (Secrets verfügbar)
-    if hasattr(st, 'secrets') and len(st.secrets) > 0:
-        # Streamlit Cloud: Lade aus st.secrets
-        for key in st.secrets:
-            if key not in os.environ:
-                os.environ[key] = str(st.secrets[key])
-    else:
-        # Lokal mit Streamlit aber ohne Secrets: Verwende .env
-        from dotenv import load_dotenv
-        load_dotenv()
-except (ImportError, AttributeError, FileNotFoundError):
-    # Kein Streamlit oder Fehler: Verwende .env
+    import tomllib  # Python 3.11+
+except ImportError:  # pragma: no cover
+    try:
+        import tomli as tomllib  # type: ignore
+    except ImportError:
+        tomllib = None
+
+def _apply_env_from_mapping(mapping, prefix=""):
+    for key, value in mapping.items():
+        env_key = f"{prefix}{key}" if not prefix else f"{prefix}{key}".upper()
+        if isinstance(value, dict):
+            _apply_env_from_mapping(value, prefix=f"{env_key}_")
+        elif isinstance(value, (str, int, float, bool)):
+            os.environ.setdefault(str(env_key), str(value))
+
+
+def _load_streamlit_secrets():
+    secret_locations = [
+        Path.cwd() / ".streamlit" / "secrets.toml",
+        Path.home() / ".streamlit" / "secrets.toml",
+    ]
+    if not any(path.exists() for path in secret_locations):
+        return False
+
+    try:
+        import streamlit as st
+        secrets_obj = getattr(st, "secrets", None)
+        if not secrets_obj:
+            return False
+        extracted = {key: secrets_obj[key] for key in secrets_obj}
+        _apply_env_from_mapping(extracted)
+        return True
+    except Exception:
+        return False
+
+
+def _load_local_secrets():
+    secrets_file = Path("secrets.toml")
+    if not secrets_file.exists() or tomllib is None:
+        return False
+    try:
+        with secrets_file.open("rb") as fh:
+            data = tomllib.load(fh)
+        _apply_env_from_mapping(data)
+        return True
+    except Exception:
+        return False
+
+
+def _load_dotenv_file():
     try:
         from dotenv import load_dotenv
         load_dotenv()
     except ImportError:
-        pass  # dotenv nicht installiert, verwende Umgebungsvariablen direkt
+        pass
+
+
+_load_streamlit_secrets()
+_load_local_secrets()
+_load_dotenv_file()
 
 
 @dataclass
@@ -66,6 +107,19 @@ class Assignment:
 
 
 @dataclass
+class AccessLink:
+    """Einladungs-Link für Teilnehmer"""
+    token: str
+    user_id: str
+    created_at: str
+    disabled: bool = False
+
+    @classmethod
+    def from_dict(cls, data: dict):
+        return cls(**data)
+
+
+@dataclass
 class Event:
     """Wichtel-Event"""
     id: str
@@ -74,7 +128,9 @@ class Event:
     created_at: str
     participant_ids: List[str]
     assignments: List[Assignment]
+    access_links: List[AccessLink] = field(default_factory=list)
     is_started: bool = False
+    gift_value: str = ""
     
     @classmethod
     def from_dict(cls, data: dict):
@@ -83,11 +139,18 @@ class Event:
         data.pop('is_revealed', None)
         
         data['assignments'] = [Assignment.from_dict(a) for a in data.get('assignments', [])]
+        data['access_links'] = [AccessLink.from_dict(link) for link in data.get('access_links', [])]
+        
+        # Setze Standardwert für neues Feld
+        if 'gift_value' not in data:
+            data['gift_value'] = ""
+            
         return cls(**data)
     
     def to_dict(self):
         result = asdict(self)
         result['assignments'] = [asdict(a) for a in self.assignments]
+        result['access_links'] = [asdict(link) for link in self.access_links]
         return result
 
 
@@ -120,7 +183,7 @@ class JSONDataManager:
         JSONDataManager.save_users(users)
     
     @staticmethod
-    def create_event(title: str, creator_id: str, participant_ids: List[str]) -> Event:
+    def create_event(title: str, creator_id: str, participant_ids: List[str], gift_value: str = "") -> Event:
         """Erstellt ein neues Event"""
         event = Event(
             id=str(uuid.uuid4()),
@@ -128,7 +191,8 @@ class JSONDataManager:
             created_by=creator_id,
             created_at=datetime.now().isoformat(),
             participant_ids=participant_ids,
-            assignments=[]
+            assignments=[],
+            gift_value=gift_value
         )
         events = JSONDataManager.load_events()
         events[event.id] = event
@@ -186,12 +250,12 @@ if USE_MONGODB:
     try:
         from database import MongoDataManager
         DataManager = MongoDataManager
-        print("✅ Verwende MongoDB als Datenbank")
+        print(" Verwende MongoDB als Datenbank")
     except ImportError as e:
-        print(f"⚠️ MongoDB-Import fehlgeschlagen: {e}")
-        print("📁 Fallback auf JSON-Files")
+        print(f" MongoDB-Import fehlgeschlagen: {e}")
+        print(" Fallback auf JSON-Files")
         DataManager = JSONDataManager
 else:
     # Verwende JSON-Files (Standard)
     DataManager = JSONDataManager
-    print("📁 Verwende JSON-Files als Datenbank")
+    print(" Verwende JSON-Files als Datenbank")

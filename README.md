@@ -1,128 +1,79 @@
-# 🎄 Wichtel-App 🎅
+# Wichtel-App
 
-Eine interaktive Streamlit-App für geheimes Weihnachtswichteln!
+Streamlit-Anwendung fuer geheimes Weihnachtswichteln mit Magic-Link-Zugriff fuer Teilnehmer.
 
-## 🎁 Funktionen
+## Highlights
 
-- **Benutzer-Verwaltung**: Login mit vordefinierten Accounts
-- **Passwort-Änderung**: Beim ersten Login muss jeder Nutzer ein eigenes Passwort wählen
-- **Admin-Berechtigung**: Nur Admins können Events erstellen, starten und löschen
-- **Event-Erstellung**: Erstelle Wichtel-Events mit mehreren Teilnehmern (nur Admins)
-- **Event-Löschen**: Admins können Events löschen
-- **Zufällige Zuweisung**: Automatische, zufällige Wichtel-Paarungen
-- **Geheime Enthüllung**: Jeder Teilnehmer sieht nur seinen eigenen Wichtel
-- **E-Mail-Benachrichtigungen**: Automatische E-Mails bei Event-Start (optional)
-- **Weihnachtliches Design**: Festliches UI mit Animationen
+- Magic-Link Login: Eingeladene Nutzer brauchen nur ihren persoenlichen Link.
+- Admin-Dashboard: Events erstellen, starten, loeschen und Links kopieren.
+- Automatische Mails: Optionaler Gmail-Versand verschickt die individuellen Links.
+- Flexible Speicherung: JSON-Dateien oder MongoDB (per Konfiguration).
+- Festliches UI mit Reveal-Animation.
 
-## 🚀 Installation & Start
+## Installation
 
-### 1. Abhängigkeiten installieren
+1. `pip install -r requirements.txt`
+2. `.env.example` in `.env` kopieren und Werte setzen (APP_URL, Gmail-Zugang, MongoDB).
+3. (Optional fr Streamlit Cloud) `secrets.example.toml` nach `.streamlit/secrets.toml` kopieren und Werte eintragen.
+4. `streamlit run app.py`
 
-```bash
-pip install -r requirements.txt
-```
+## Verwendung
 
-### 2. Gmail E-Mail-Versand einrichten (optional)
+### Admin-Login
 
-Die App kann automatisch E-Mails versenden, wenn Events erstellt oder gestartet werden.
+- In der App auf **Admin-Login oeffnen** klicken.
+- Standardzugang: `anna@test.de` / `temp123` (Passwort nach dem ersten Login aendern).
+- Alle anderen Nutzer arbeiten ausschliesslich mit Links.
 
-**Kurzanleitung:**
-1. Erstelle ein Gmail App-Passwort (siehe `GMAIL_SETUP.md` für Details)
-2. Trage deine Gmail-Adresse und App-Passwort in `email_service.py` ein
-3. Fertig!
+### Events und Einladungen
 
-Für die vollständige Anleitung siehe: **[GMAIL_SETUP.md](GMAIL_SETUP.md)**
+1. Als Admin ein Event anlegen und Teilnehmer auswaehlen.
+2. Die App erzeugt automatisch einen Token pro Teilnehmer.
+3. Im Event-Detail unter **Einladungslinks verwalten** lassen sich alle URLs kopieren oder erneuern.
+4. Bei aktivem Mail-Versand enthalten Einladungs- und Startmail automatisch den passenden Link.
 
-Falls du keinen E-Mail-Versand möchtest, funktioniert die App auch ohne - einfach `send_event_started_emails(event)` in `ui_components.py` auskommentieren.
+### Teilnehmer-Erlebnis
 
-### 3. App starten
+- Der Link sieht aus wie `https://deine-app/-token=...`.
+- Vor dem Start sehen Nutzer den Status, nach dem Start koennen sie ihren Wichtel mit einem Klick anzeigen.
+- Links bleiben wiederverwendbar, damit Teilnehmer jederzeit nachschauen koennen.
 
-```bash
-streamlit run app.py
-```
+## E-Mail-Versand (optional)
 
-## 📖 Verwendung
+- Nutzt Gmail-App-Passwoerter (siehe `GMAIL_SETUP.md`).
+- `APP_URL` muss auf die oeffentliche Streamlit-Adresse zeigen, sonst verweisen die Links ins Leere.
+- `SENDER_EMAIL` und `SENDER_PASSWORD` kommen idealerweise aus `.env` oder den Streamlit-Secrets.
 
-### Test-Accounts
+## Testdaten
 
-Die App kommt mit 5 vordefinierten Test-Accounts:
+| Rolle  | E-Mail        | Passwort |
+|--------|---------------|----------|
+| Admin  | anna@test.de  | temp123  |
+| Nutzer | max@test.de   | temp123  |
+| Nutzer | lisa@test.de  | temp123  |
+| Nutzer | tom@test.de   | temp123  |
+| Nutzer | sarah@test.de | temp123  |
 
-**Admin:**
-- **E-Mail**: anna@test.de
-- **Passwort**: temp123 (beim ersten Login ändern)
+Nur der Admin benoetigt das Passwort im neuen Flow.
 
-**Normale Nutzer:**
-- **E-Mail**: max@test.de / lisa@test.de / tom@test.de / sarah@test.de
-- **Passwort**: temp123 (beim ersten Login ändern)
+## Projektstruktur
 
-### Erster Login
+- `app.py`  Einstieg & Routing
+- `config.py`  Konstanten
+- `models.py`  Datamodelle & Storage
+- `link_service.py`  Magic-Link-Service
+- `ui_components.py`  Streamlit-Komponenten
+- `email_service.py`  Mailversand
+- `wichtel_logic.py`  Zuweisungslogik
+- `users.json` / `events.json`  Beispieldaten
+- `GMAIL_SETUP.md`  Gmail-Anleitung
 
-1. Melde dich mit einem Account an (E-Mail und temporäres Passwort)
-2. Du wirst aufgefordert, ein neues Passwort zu wählen (mindestens 6 Zeichen)
-3. Nach erfolgreicher Passwortänderung bist du eingeloggt
+## Sicherheit
 
-### Event erstellen (nur Admin)
+Demoversion fuer private Nutzung. Fuer produktive Einsaetze empfohlen:
 
-1. Melde dich als Admin an (anna@test.de)
-2. Klicke auf "Neues Wichtel-Event erstellen"
-3. Gib einen Titel ein
-4. Wähle Teilnehmer aus
-5. Erstelle das Event
+- Passwoerter hashen (z. B. bcrypt) und TLS erzwingen.
+- Tokens ggf. mit Ablaufdatum/IP-Logging absichern.
+- Secrets ausschliesslich per Environment-Variablen verwalten.
 
-### Wichtel-Zuweisungen starten (nur Admin)
-
-1. Öffne dein Event
-2. Als Admin siehst du den Button "Wichtel-Zuweisungen starten"
-3. Klicke darauf, um die zufälligen Paarungen zu generieren
-
-### Wichtel anzeigen (alle Teilnehmer)
-
-1. Jeder Teilnehmer kann sein Event öffnen
-2. Klicke auf "Meinen Wichtel zeigen"
-3. Du siehst, für wen du ein Geschenk besorgen sollst
-
-### Event löschen (nur Admin)
-
-1. Als Admin siehst du einen 🗑️ Button bei jedem Event
-2. Klicke darauf und bestätige die Löschung
-
-## 📁 Projektstruktur
-
-```
-wichtel-app/
-├── app.py                  # Hauptanwendung
-├── config.py              # Konfiguration & Konstanten
-├── models.py              # Datenmodelle & DataManager
-├── wichtel_logic.py       # Geschäftslogik
-├── ui_components.py       # UI-Komponenten
-├── email_service.py       # E-Mail-Versand (Gmail)
-├── users.json            # Benutzerdaten
-├── events.json           # Event-Daten
-├── requirements.txt      # Python-Abhängigkeiten
-├── README.md             # Diese Datei
-└── GMAIL_SETUP.md        # Gmail-Setup-Anleitung
-```
-
-## 🎨 Features
-
-- ✅ Saubere Trennung von UI und Logik
-- ✅ Admin-Berechtigungen für Event-Verwaltung
-- ✅ Passwort-Änderung beim ersten Login
-- ✅ Weihnachtliches, animiertes Design
-- ✅ Benutzerfreundliche Oberfläche
-- ✅ JSON-basierte Datenspeicherung
-- ✅ Zufällige Wichtel-Zuweisungen
-- ✅ Geheime, individuelle Zuweisungen
-- ✅ Event-Löschfunktion für Admins
-
-## 🔒 Sicherheitshinweis
-
-Dies ist eine Demo-App für private Verwendung. Für Produktivumgebungen sollten:
-- Passwörter gehasht werden (z.B. mit bcrypt)
-- HTTPS verwendet werden
-- Eine richtige Datenbank genutzt werden
-- Session-Management verbessert werden
-
-## 🎉 Viel Spaß beim Wichteln!
-
-Frohe Weihnachten und ein frohes Fest! 🎄✨
+Viel Spass beim Wichteln!
