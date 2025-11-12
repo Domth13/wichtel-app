@@ -6,6 +6,7 @@ import streamlit as st
 from config import APP_TITLE, APP_ICON
 from models import DataManager
 from link_service import LinkAuthService
+from language import LANGUAGES, get_translator, set_language, init_language_support
 
 # Seitenkonfiguration
 st.set_page_config(
@@ -18,7 +19,7 @@ st.set_page_config(
 # Weihnachtliches Theme anwenden
 from ui_components import (
     apply_christmas_theme,
-    show_header,
+    show_language_selector,
     show_login_form,
     show_password_change_form,
     show_event_list,
@@ -51,7 +52,7 @@ def get_query_params():
     return st.experimental_get_query_params()
 
 
-def handle_link_auth():
+def handle_link_auth(_):
     """Versucht Benutzer über Token-Query-Param einzuloggen"""
     params = get_query_params()
     token_param = params.get("token")
@@ -74,7 +75,7 @@ def handle_link_auth():
 
     resolved = LinkAuthService.resolve_token(token_value)
     if not resolved:
-        st.error("Ungültiger oder deaktivierter Einladungslink.")
+        st.error(_("invalid_invite_link"))
         return
 
     event, link = resolved
@@ -82,7 +83,7 @@ def handle_link_auth():
     user = users.get(link.user_id)
 
     if not user:
-        st.error("Kein Benutzer zu diesem Link gefunden.")
+        st.error(_("no_user_for_link"))
         return
 
     st.session_state.user = user
@@ -96,59 +97,59 @@ def handle_link_auth():
         del st.session_state['temp_user']
 
 
-def render_public_entry():
+def render_public_entry(_):
     """Zeigt Infos für Teilnehmer ohne Admin-Login"""
-    st.info("Bitte verwende deinen persönlichen Einladungslink, um direkt zum Event zu gelangen.")
-    st.caption("Admins können sich über den Login anmelden.")
+    st.info(_("use_personal_link_info"))
+    st.caption(_("admins_can_login_caption"))
 
     if not st.session_state.admin_login:
-        if st.button("Admin-Login öffnen"):
+        if st.button(_("open_admin_login")):
             st.session_state.admin_login = True
             st.rerun()
     else:
-        show_login_form()
+        show_login_form(_)
 
 
-def render_admin_view(user):
+def render_admin_view(user, _):
     """Zeigt den kompletten Admin-Workflow"""
     with st.sidebar:
         st.write(f"### {user.name}")
         st.write(f" {user.email}")
-        show_logout_button()
+        show_logout_button(_)
 
     if st.session_state.current_event is None:
-        show_create_event_form(user)
+        show_create_event_form(user, _)
         st.divider()
-        show_event_list(user)
+        show_event_list(user, _)
     else:
         events = DataManager.load_events()
         event = events.get(st.session_state.current_event)
 
         if event:
-            show_event_details(event, user, admin_view=True)
+            show_event_details(event, user, _, admin_view=True)
         else:
-            st.error("Event nicht gefunden")
+            st.error(_("event_not_found"))
             st.session_state.current_event = None
             st.rerun()
 
 
-def render_participant_view(user):
+def render_participant_view(user, _):
     """Zeigt direkt das eingeladene Event"""
     with st.sidebar:
         st.write(f"### {user.name}")
-        st.caption("Angemeldet über Einladungslink.")
+        st.caption(_("logged_in_via_invite"))
 
     if not st.session_state.current_event:
-        st.warning("Kein Event zu diesem Link gefunden.")
+        st.warning(_("no_event_for_link"))
         return
 
     events = DataManager.load_events()
     event = events.get(st.session_state.current_event)
 
     if event and user.id in event.participant_ids:
-        show_event_details(event, user, admin_view=False)
+        show_event_details(event, user, _, admin_view=False)
     else:
-        st.error("Dieses Event ist nicht mehr verfügbar oder du bist kein Teilnehmer.")
+        st.error(_("event_unavailable_or_not_participant"))
         st.session_state.user = None
         st.session_state.auth_via_link = False
         st.session_state.link_token = None
@@ -156,28 +157,36 @@ def render_participant_view(user):
 
 def main():
     """Hauptfunktion der App"""
-    init_session_state()
-    show_header()
-    handle_link_auth()
+    init_language_support()
+    _ = get_translator()
+
+    show_language_selector(_)
     
+    init_session_state()
+    handle_link_auth(_)
+    
+    st.title(_("app_title"))
+    st.caption(_("app_slogan"))
+    st.divider()
+
     # Prüfe ob Passwort geändert werden muss
     if hasattr(st.session_state, 'show_password_change') and st.session_state.show_password_change:
-        show_password_change_form()
+        show_password_change_form(_)
         return
     
     # Prüfe ob Benutzer eingeloggt ist
     if st.session_state.user is None:
         if st.session_state.admin_login:
-            show_login_form()
+            show_login_form(_)
         else:
-            render_public_entry()
+            render_public_entry(_)
     else:
         user = st.session_state.user
 
         if user.is_admin:
-            render_admin_view(user)
+            render_admin_view(user, _)
         else:
-            render_participant_view(user)
+            render_participant_view(user, _)
 
 
 if __name__ == "__main__":

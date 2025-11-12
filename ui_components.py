@@ -8,6 +8,31 @@ from models import User, Event, DataManager
 from wichtel_logic import WichtelLogic
 from email_service import send_event_started_emails
 from link_service import LinkAuthService, build_invite_url
+from language import LANGUAGES, set_language
+
+
+def show_language_selector(_):
+    """Shows a language selector dropdown in the sidebar."""
+    st.sidebar.write("")  # Spacer
+
+    def on_language_change():
+        set_language(st.session_state.lang_select)
+
+    lang_codes = list(LANGUAGES.keys())
+    try:
+        current_lang = st.session_state.get('language', 'de')
+        current_index = lang_codes.index(current_lang)
+    except ValueError:
+        current_index = 0  # Default to first language
+
+    st.sidebar.selectbox(
+        label=_("language_selector_label"),
+        options=lang_codes,
+        index=current_index,
+        format_func=lambda code: LANGUAGES[code],
+        key="lang_select",
+        on_change=on_language_change
+    )
 
 
 def apply_christmas_theme():
@@ -90,41 +115,39 @@ def apply_christmas_theme():
             text-align: center;
             padding-bottom: 10px;
         }
+        .header-icons {
+            font-size: 40px;
+            text-align: center;
+            padding-bottom: 10px;
+        }
         </style>
         """,
         unsafe_allow_html=True,
     )
-
-
-def show_header():
-    """Simple header with a Christmas gift emoji."""
     st.markdown(
         """
-        <div class='header-container'>
-            <div class='gift-box'>🎁</div>
-            <h1>Wichtel App</h1>
-            <p style='text-align: center; font-style: italic;'>
-                Frohe Weihnachten und viel Spaß beim Wichteln!
-            </p>
+        <div class="header-icons">
+            <span>☃️</span>
+            <span>🎄</span>
+            <span>🎁</span>
         </div>
         """,
-        unsafe_allow_html=True,
+        unsafe_allow_html=True
     )
-    st.divider()
 
 
-def show_login_form():
+def show_login_form(_):
     """Login form for admins only."""
-    st.subheader("Admin Login")
+    st.subheader(_("admin_login"))
     with st.form("login_form"):
-        email = st.text_input("E-Mail", placeholder="anna@example.com")
-        password = st.text_input("Passwort", type="password")
-        submit = st.form_submit_button("Anmelden", use_container_width=True)
+        email = st.text_input(_("email_label"), placeholder="anna@example.com")
+        password = st.text_input(_("password_label"), type="password")
+        submit = st.form_submit_button(_("login_button"), use_container_width=True)
 
         if submit:
             user = DataManager.authenticate(email, password)
             if not user:
-                st.error("Anmeldedaten sind ungültig.")
+                st.error(_("invalid_credentials"))
                 return
 
             if not user.password_changed:
@@ -136,33 +159,33 @@ def show_login_form():
             st.session_state.user = user
             if hasattr(st.session_state, "admin_login"):
                 st.session_state.admin_login = False
-            st.success(f"Willkommen, {user.name}!")
+            st.success(_("welcome", name=user.name))
             st.rerun()
 
 
-def show_password_change_form():
+def show_password_change_form(_):
     """Password change dialog that is shown on first login."""
-    st.subheader("Passwort ändern")
-    st.info("Bitte wähle ein neues Passwort für deinen Account.")
+    st.subheader(_("change_password_header"))
+    st.info(_("change_password_info"))
     user = st.session_state.temp_user
-    st.write(f"**Account:** {user.name} ({user.email})")
+    st.write(f"**{_('account')}:** {user.name} ({user.email})")
 
     with st.form("password_change_form"):
-        new_password = st.text_input("Neues Passwort", type="password")
-        confirm_password = st.text_input("Passwort bestätigen", type="password")
-        submit = st.form_submit_button("Speichern", use_container_width=True)
+        new_password = st.text_input(_("new_password"), type="password")
+        confirm_password = st.text_input(_("confirm_password"), type="password")
+        submit = st.form_submit_button(_("save_button"), use_container_width=True)
 
         if not submit:
             return
 
         if not new_password:
-            st.error("Bitte gib ein Passwort ein.")
+            st.error(_("password_empty"))
             return
         if len(new_password) < 6:
-            st.error("Passwort muss mindestens 6 Zeichen haben.")
+            st.error(_("password_too_short"))
             return
         if new_password != confirm_password:
-            st.error("Passwörter stimmen nicht überein.")
+            st.error(_("passwords_not_match"))
             return
 
         user.password = new_password
@@ -171,18 +194,18 @@ def show_password_change_form():
         st.session_state.user = user
         st.session_state.pop("temp_user", None)
         st.session_state.pop("show_password_change", None)
-        st.success("Passwort gespeichert. Viel Spaß!")
+        st.success(_("password_saved"))
         st.balloons()
         st.rerun()
 
 
-def show_event_list(user: User):
+def show_event_list(user: User, _):
     """List of events for the admin dashboard."""
-    st.subheader(f"Hallo {user.name}!")
+    st.subheader(_("hello", name=user.name))
     events = WichtelLogic.get_user_events(user.id)
 
     if not events:
-        st.info("Noch keine Events vorhanden.")
+        st.info(_("no_events_yet"))
         return
 
     for event in events:
@@ -190,20 +213,20 @@ def show_event_list(user: User):
             col1, col2 = st.columns([3, 1])
             with col1:
                 st.markdown(f"### {event.title}")
-                caption = f"{len(event.participant_ids)} Teilnehmer"
+                caption = _("participants", count=len(event.participant_ids))
                 if event.gift_value:
-                    caption += f"  ·  Wert: {event.gift_value}"
+                    caption += f"  ·  {_('gift_value', value=event.gift_value)}"
                 st.caption(caption)
             with col2:
                 if event.is_started:
-                    st.success("Gestartet")
+                    st.success(_("started"))
                 else:
-                    st.warning("Wartet")
+                    st.warning(_("waiting"))
 
             button_cols = st.columns([3, 1] if user.is_admin else [1])
             with button_cols[0]:
                 if st.button(
-                    "Event öffnen",
+                    _("open_event"),
                     key=f"open_{event.id}",
                     use_container_width=True,
                     type="primary",
@@ -213,7 +236,7 @@ def show_event_list(user: User):
 
             if user.is_admin and len(button_cols) > 1:
                 with button_cols[1]:
-                    if st.button("Löschen", key=f"delete_{event.id}"):
+                    if st.button(_("delete_button"), key=f"delete_{event.id}"):
                         st.session_state.delete_confirm = event.id
                         st.rerun()
 
@@ -221,21 +244,21 @@ def show_event_list(user: User):
                 hasattr(st.session_state, "delete_confirm")
                 and st.session_state.delete_confirm == event.id
             ):
-                st.warning(f"Event '{event.title}' wirklich löschen?")
+                st.warning(_("confirm_delete_event", title=event.title))
                 col_yes, col_no = st.columns(2)
                 with col_yes:
                     if st.button(
-                        "Ja, löschen",
+                        _("yes_delete"),
                         key=f"confirm_delete_{event.id}",
                         use_container_width=True,
                     ):
                         DataManager.delete_event(event.id)
                         del st.session_state.delete_confirm
-                        st.success("Event gelöscht.")
+                        st.success(_("event_deleted"))
                         st.rerun()
                 with col_no:
                     if st.button(
-                        "Abbrechen",
+                        _("cancel"),
                         key=f"cancel_delete_{event.id}",
                         use_container_width=True,
                     ):
@@ -244,67 +267,67 @@ def show_event_list(user: User):
         st.divider()
 
 
-def show_create_event_form(user: User):
+def show_create_event_form(user: User, _):
     """Form for creating a new event (admins only)."""
     if not user.is_admin:
         return
 
-    with st.expander("Neues Event erstellen", expanded=True):
-        title = st.text_input("Event-Titel", placeholder="Weihnachtswichteln 2025")
-        gift_value = st.text_input("Wert der Geschenke (optional)", placeholder="z.B. ca. 15€")
+    with st.expander(_("create_new_event"), expanded=True):
+        title = st.text_input(_("event_title"), placeholder=_("event_title_placeholder"))
+        gift_value = st.text_input(_("gift_value_optional"), placeholder=_("gift_value_placeholder"))
         
-        st.write("Teilnehmer auswählen:")
+        st.write(_("select_participants"))
         users = DataManager.load_users()
         user_options = {uid: u.name for uid, u in users.items() if uid != user.id}
         selected_users = st.multiselect(
-            "Teilnehmer",
+            _("participants_label"),
             options=list(user_options.keys()),
             format_func=lambda uid: user_options[uid],
             label_visibility="collapsed",
         )
 
         if st.button(
-            "Event erstellen",
+            _("create_event_button"),
             type="primary",
             use_container_width=True,
             key="create_event_btn",
         ):
             if not title or not selected_users:
-                st.warning("Bitte Titel und mindestens einen Teilnehmer auswählen.")
+                st.warning(_("title_participants_missing"))
                 return
 
             participant_ids = [user.id] + selected_users
             event = DataManager.create_event(title, user.id, participant_ids, gift_value)
             LinkAuthService.ensure_links_for_event(event)
-            st.success(f"Event '{title}' erstellt.")
+            st.success(_("event_created", title=title))
             st.session_state.current_event = event.id
             st.rerun()
 
 
-def show_event_details(event: Event, user: User, admin_view: bool = False):
+def show_event_details(event: Event, user: User, _, admin_view: bool = False):
     """Details page for a given event."""
     if admin_view:
-        if st.button("Zurück zur Liste"):
+        if st.button(_("back_to_list")):
             st.session_state.current_event = None
             st.rerun()
         LinkAuthService.ensure_links_for_event(event)
     else:
-        st.caption("Angemeldet über Einladungslink.")
+        st.caption(_("logged_in_via_invite"))
 
     st.markdown(f"## {event.title}")
     st.divider()
 
     if not event.is_started:
-        st.warning("Das Event wurde noch nicht gestartet.")
+        st.warning(_("event_not_started"))
         if admin_view and user.is_admin:
             if st.button(
-                "Wichtel-Zuweisungen starten",
+                _("start_assignments"),
                 type="primary",
                 use_container_width=True,
             ):
                 WichtelLogic.assign_wichtel_random(event)
                 send_event_started_emails(event)
-                st.success("Zuweisungen erstellt und Mails versendet.")
+                st.success(_("assignments_sent"))
                 st.balloons()
                 st.rerun()
     else:
@@ -312,7 +335,7 @@ def show_event_details(event: Event, user: User, admin_view: bool = False):
         if assignment:
             if not assignment.revealed:
                 if st.button(
-                    "Meinen Wichtel anzeigen",
+                    _("show_my_wichtel"),
                     type="primary",
                     use_container_width=True,
                 ):
@@ -320,11 +343,12 @@ def show_event_details(event: Event, user: User, admin_view: bool = False):
                     st.rerun()
             else:
                 receiver_name = WichtelLogic.get_receiver_name(assignment)
-                gift_value_html = f"<p style='font-size: 16px; margin-top: 15px; opacity: 0.9;'>Geschenkwert: {event.gift_value}</p>" if event.gift_value else ""
+                gift_value_html = f"<p style='font-size: 16px; margin-top: 15px; opacity: 0.9;'>{_('gift_value_display', value=event.gift_value)}</p>" if event.gift_value else ""
                 st.markdown(
                     f"""
                     <div class='wichtel-reveal'>
-                        Du wichtelst für:<br>
+                        <span style="font-size: 40px;">🎁</span><br>
+                        {_('you_wichtel_for')}<br>
                         <strong>{receiver_name}</strong>
                         {gift_value_html}
                     </div>
@@ -335,17 +359,17 @@ def show_event_details(event: Event, user: User, admin_view: bool = False):
     st.divider()
     users = DataManager.load_users()
 
-    with st.expander("Event Informationen", expanded=False):
+    with st.expander(_("event_information"), expanded=False):
         col1, col2 = st.columns(2)
         with col1:
-            st.write(f"Teilnehmer: {len(event.participant_ids)}")
+            st.write(f"{_('participants_label')}: {len(event.participant_ids)}")
             if event.gift_value:
-                st.write(f"Geschenkwert: {event.gift_value}")
+                st.write(f"{_('gift_value_display', value=event.gift_value)}")
         with col2:
             creator = users.get(event.created_by)
-            st.write(f"Erstellt von: {creator.name if creator else 'Unbekannt'}")
+            st.write(f"{_('created_by')}: {creator.name if creator else _('unknown')}")
 
-    with st.expander("Alle Teilnehmer", expanded=False):
+    with st.expander(_("all_participants"), expanded=False):
         for pid in event.participant_ids:
             participant = users.get(pid)
             if participant:
@@ -353,7 +377,7 @@ def show_event_details(event: Event, user: User, admin_view: bool = False):
 
     if admin_view:
         st.divider()
-        with st.expander("Einladungslinks verwalten", expanded=False):
+        with st.expander(_("manage_invite_links"), expanded=False):
             for pid in event.participant_ids:
                 participant = users.get(pid)
                 if not participant:
@@ -368,18 +392,18 @@ def show_event_details(event: Event, user: User, admin_view: bool = False):
                     disabled=True,
                 )
                 if st.button(
-                    f"Link erneuern für {participant.name}",
+                    _("refresh_link", name=participant.name),
                     key=f"refresh_link_{event.id}_{pid}",
                 ):
                     LinkAuthService.refresh_link(event, pid)
-                    st.success("Link erneuert.")
+                    st.success(_("link_refreshed"))
                     st.rerun()
                 st.write("")
 
 
-def show_logout_button():
+def show_logout_button(_):
     """Sidebar logout button."""
     st.sidebar.divider()
-    if st.sidebar.button("Abmelden", use_container_width=True):
+    if st.sidebar.button(_("logout_button"), use_container_width=True):
         st.session_state.clear()
         st.rerun()
