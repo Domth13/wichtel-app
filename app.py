@@ -24,7 +24,8 @@ from ui_components import (
     show_event_list,
     show_create_event_form,
     show_event_details,
-    show_logout_button
+    show_logout_button,
+    show_language_selector
 )
 
 apply_christmas_theme()
@@ -158,6 +159,8 @@ def main():
     """Hauptfunktion der App"""
     init_language_support()
     _ = get_translator()
+    
+    show_language_selector(_)
     
     init_session_state()
     handle_link_auth(_)
