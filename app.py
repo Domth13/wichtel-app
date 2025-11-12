@@ -19,7 +19,6 @@ st.set_page_config(
 # Weihnachtliches Theme anwenden
 from ui_components import (
     apply_christmas_theme,
-    show_language_selector,
     show_login_form,
     show_password_change_form,
     show_event_list,
@@ -159,8 +158,6 @@ def main():
     """Hauptfunktion der App"""
     init_language_support()
     _ = get_translator()
-
-    show_language_selector(_)
     
     init_session_state()
     handle_link_auth(_)
