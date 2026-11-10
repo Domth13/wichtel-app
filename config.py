@@ -1,10 +1,13 @@
 """
 Konfigurationsdatei für die Wichtel-App
 """
+from pathlib import Path
 
-# Dateipfade
-USERS_FILE = "users.json"
-EVENTS_FILE = "events.json"
+BASE_DIR = Path(__file__).resolve().parent
+
+# Dateipfade (absolut, damit die App unabhängig vom Arbeitsverzeichnis läuft)
+USERS_FILE = str(BASE_DIR / "users.json")
+EVENTS_FILE = str(BASE_DIR / "events.json")
 
 # Session State Keys
 SESSION_USER = "user"
@@ -16,10 +19,6 @@ VIEW_LOGIN = "login"
 VIEW_ADMIN = "admin"
 VIEW_PARTICIPANT = "participant"
 VIEW_EVENT_REVEAL = "reveal"
-
-# E-Mail Konfiguration (optional für später)
-SMTP_SERVER = "smtp.gmail.com"
-SMTP_PORT = 587
 
 # App Einstellungen
 APP_TITLE = "🎄 Wichtel App 🎅"

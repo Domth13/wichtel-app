@@ -1,23 +1,32 @@
 """
-MongoDB-Datenbank-Layer für die Wichtel-App
-Ersetzt die JSON-basierten Datenspeicherung
+MongoDB-Datenbank-Layer für die Wichtel-App.
 """
+import logging
 import os
-from typing import Dict, List, Optional, TYPE_CHECKING
-from datetime import datetime
 import uuid
-from pymongo import MongoClient
-from pymongo.database import Database
-from pymongo.collection import Collection
-from dotenv import load_dotenv
 from dataclasses import asdict
+from datetime import datetime
+from functools import wraps
+from typing import TYPE_CHECKING, Dict, List, Optional
 
-# Type-only imports (nur für Type Checker, nicht zur Laufzeit)
+from dotenv import load_dotenv
+from pymongo import MongoClient, UpdateOne
+from pymongo.collection import Collection
+from pymongo.database import Database
+from pymongo.errors import PyMongoError
+
+from security import hash_password, is_password_hash, verify_password
+from storage_cache import StorageUnavailableError, cached, invalidate
+
 if TYPE_CHECKING:
-    from models import User, Event
+    from models import Event, User
 
-# Lade Umgebungsvariablen
 load_dotenv()
+logger = logging.getLogger(__name__)
+
+_CACHE_TTL = 3.0
+_USERS_CACHE_KEY = "mongo_users"
+_EVENTS_CACHE_KEY = "mongo_events"
 
 
 class DatabaseConfig:
@@ -29,348 +38,360 @@ class DatabaseConfig:
 
 
 class MongoDB:
-    """MongoDB-Verbindungs-Manager"""
+    """MongoDB-Verbindungs-Manager (Singleton pro Prozess)."""
     _client: Optional[MongoClient] = None
     _db: Optional[Database] = None
-    
+
     @classmethod
     def get_client(cls) -> MongoClient:
-        """Gibt MongoDB-Client zurück (Singleton)"""
         if cls._client is None:
-            cls._client = MongoClient(DatabaseConfig.MONGODB_URI)
+            cls._client = MongoClient(
+                DatabaseConfig.MONGODB_URI,
+                serverSelectionTimeoutMS=6000,
+                connectTimeoutMS=6000,
+                socketTimeoutMS=20000,
+                retryWrites=True,
+                appname="wichtel-app",
+            )
         return cls._client
-    
+
     @classmethod
     def get_database(cls) -> Database:
-        """Gibt Datenbank zurück"""
         if cls._db is None:
-            client = cls.get_client()
-            cls._db = client[DatabaseConfig.DATABASE_NAME]
+            cls._db = cls.get_client()[DatabaseConfig.DATABASE_NAME]
         return cls._db
-    
+
     @classmethod
     def get_users_collection(cls) -> Collection:
-        """Gibt Users-Collection zurück"""
-        db = cls.get_database()
-        return db[DatabaseConfig.USERS_COLLECTION]
-    
+        return cls.get_database()[DatabaseConfig.USERS_COLLECTION]
+
     @classmethod
     def get_events_collection(cls) -> Collection:
-        """Gibt Events-Collection zurück"""
-        db = cls.get_database()
-        return db[DatabaseConfig.EVENTS_COLLECTION]
-    
+        return cls.get_database()[DatabaseConfig.EVENTS_COLLECTION]
+
     @classmethod
     def close(cls):
-        """Schließt die Datenbankverbindung"""
         if cls._client is not None:
             cls._client.close()
             cls._client = None
             cls._db = None
 
 
+def _guard(func):
+    """Wandelt MongoDB-Fehler in eine verständliche App-Meldung um."""
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except PyMongoError as exc:
+            logger.error("MongoDB-Fehler: %s", exc)
+            raise StorageUnavailableError(
+                "Die Datenbank ist momentan nicht erreichbar."
+            ) from exc
+    return wrapper
+
+
 class MongoDataManager:
-    """Datenbank-Manager für MongoDB (ersetzt DataManager)"""
-    
+    """Datenbank-Manager für MongoDB."""
+
+    # ---------- Benutzer ----------
+
     @staticmethod
-    def load_users() -> Dict[str, 'User']:
-        """Lädt alle Benutzer aus der Datenbank"""
+    @_guard
+    def load_users() -> Dict[str, "User"]:
         from models import User
-        
-        collection = MongoDB.get_users_collection()
-        users = {}
-        
-        for doc in collection.find():
-            # Entferne MongoDB's _id
-            doc.pop('_id', None)
-            user = User.from_dict(doc)
-            users[user.id] = user
-        
-        return users
-    
+
+        def _load():
+            collection = MongoDB.get_users_collection()
+            users = {}
+            for doc in collection.find():
+                doc.pop("_id", None)
+                user = User.from_dict(doc)
+                users[user.id] = user
+            return users
+
+        return cached(_USERS_CACHE_KEY, _load, _CACHE_TTL)
+
     @staticmethod
-    def save_users(users: Dict[str, 'User']):
-        """Speichert alle Benutzer in die Datenbank"""
+    @_guard
+    def save_users(users: Dict[str, "User"]):
         collection = MongoDB.get_users_collection()
-        
-        # Lösche alle bestehenden und füge neue ein
-        collection.delete_many({})
-        
+        incoming_ids = set(users.keys())
+        existing_ids = set(collection.distinct("id"))
+
+        removed = existing_ids - incoming_ids
+        if removed:
+            collection.delete_many({"id": {"$in": list(removed)}})
+
         if users:
-            user_docs = [asdict(user) for user in users.values()]
-            collection.insert_many(user_docs)
-    
+            collection.bulk_write(
+                [
+                    UpdateOne({"id": user.id}, {"$set": asdict(user)}, upsert=True)
+                    for user in users.values()
+                ]
+            )
+        invalidate(_USERS_CACHE_KEY)
+
     @staticmethod
-    def update_user(user: 'User'):
-        """Aktualisiert einen einzelnen Benutzer"""
+    @_guard
+    def update_user(user: "User"):
         collection = MongoDB.get_users_collection()
-        user_dict = asdict(user)
-        
-        # Update oder Insert
         collection.update_one(
-            {'id': user.id},
-            {'$set': user_dict},
-            upsert=True
+            {"id": user.id},
+            {"$set": asdict(user)},
+            upsert=True,
         )
-    
+        invalidate(_USERS_CACHE_KEY)
+
     @staticmethod
-    def get_user_by_id(user_id: str) -> Optional['User']:
-        """Holt einen Benutzer anhand der ID"""
+    @_guard
+    def create_user(
+        name: str,
+        email: str,
+        password: Optional[str] = None,
+        is_admin: bool = False,
+    ) -> "User":
+        import secrets
+
         from models import User
-        
+
+        name = (name or "").strip()
+        email = (email or "").strip().lower()
+        if not name:
+            raise ValueError("name_required")
+        if not email or "@" not in email:
+            raise ValueError("email_invalid")
+        if MongoDataManager.get_user_by_email(email):
+            raise ValueError("email_exists")
+
+        user = User(
+            id=str(uuid.uuid4()),
+            name=name,
+            email=email,
+            password=hash_password(password or secrets.token_urlsafe(24)),
+            is_admin=bool(is_admin),
+            password_changed=False,
+        )
         collection = MongoDB.get_users_collection()
-        doc = collection.find_one({'id': user_id})
-        
-        if doc:
-            doc.pop('_id', None)
-            return User.from_dict(doc)
-        return None
-    
+        collection.insert_one(asdict(user))
+        invalidate(_USERS_CACHE_KEY)
+        return user
+
     @staticmethod
-    def get_user_by_email(email: str) -> Optional['User']:
-        """Sucht Benutzer nach E-Mail"""
-        from models import User
-        
-        collection = MongoDB.get_users_collection()
-        doc = collection.find_one({'email': email})
-        
-        if doc:
-            doc.pop('_id', None)
-            return User.from_dict(doc)
+    @_guard
+    def get_user_by_email(email: str) -> Optional["User"]:
+        target = (email or "").strip().lower()
+        if not target:
+            return None
+        for user in MongoDataManager.load_users().values():
+            if (user.email or "").strip().lower() == target:
+                return user
         return None
-    
+
     @staticmethod
-    def authenticate(email: str, password: str) -> Optional['User']:
-        """Authentifiziert einen Benutzer"""
+    @_guard
+    def authenticate(email: str, password: str) -> Optional["User"]:
         user = MongoDataManager.get_user_by_email(email)
-        if user and user.password == password:
-            return user
-        return None
-    
+        if not user or not verify_password(password, user.password):
+            return None
+        if not is_password_hash(user.password):
+            user.password = hash_password(password)
+            MongoDataManager.update_user(user)
+        return user
+
+    # ---------- Events ----------
+
     @staticmethod
-    def load_events() -> Dict[str, 'Event']:
-        """Lädt alle Events aus der Datenbank"""
+    @_guard
+    def load_events() -> Dict[str, "Event"]:
         from models import Event
-        
-        collection = MongoDB.get_events_collection()
-        events = {}
-        
-        for doc in collection.find():
-            # Entferne MongoDB's _id
-            doc.pop('_id', None)
-            event = Event.from_dict(doc)
-            events[event.id] = event
-        
-        return events
-    
+
+        def _load():
+            collection = MongoDB.get_events_collection()
+            events = {}
+            for doc in collection.find():
+                doc.pop("_id", None)
+                event = Event.from_dict(doc)
+                events[event.id] = event
+            return events
+
+        return cached(_EVENTS_CACHE_KEY, _load, _CACHE_TTL)
+
     @staticmethod
-    def save_events(events: Dict[str, 'Event']):
-        """Speichert alle Events in die Datenbank"""
+    @_guard
+    def save_events(events: Dict[str, "Event"]):
         collection = MongoDB.get_events_collection()
-        
-        # Lösche alle bestehenden und füge neue ein
-        collection.delete_many({})
-        
+        incoming_ids = set(events.keys())
+        existing_ids = set(collection.distinct("id"))
+
+        removed = existing_ids - incoming_ids
+        if removed:
+            collection.delete_many({"id": {"$in": list(removed)}})
+
         if events:
-            event_docs = [event.to_dict() for event in events.values()]
-            collection.insert_many(event_docs)
-    
+            collection.bulk_write(
+                [
+                    UpdateOne(
+                        {"id": event.id},
+                        {"$set": event.to_dict()},
+                        upsert=True,
+                    )
+                    for event in events.values()
+                ]
+            )
+        invalidate(_EVENTS_CACHE_KEY)
+
     @staticmethod
-    def create_event(title: str, creator_id: str, participant_ids: List[str], gift_value: str = "") -> 'Event':
-        """Erstellt ein neues Event"""
+    @_guard
+    def create_event(
+        title: str,
+        creator_id: str,
+        participant_ids: List[str],
+        gift_value: str = "",
+        event_date: str = "",
+        location: str = "",
+        description: str = "",
+    ) -> "Event":
         from models import Event
-        
+
         event = Event(
             id=str(uuid.uuid4()),
-            title=title,
+            title=(title or "").strip(),
             created_by=creator_id,
             created_at=datetime.now().isoformat(),
-            participant_ids=participant_ids,
+            participant_ids=list(participant_ids),
             assignments=[],
-            gift_value=gift_value
+            gift_value=(gift_value or "").strip(),
+            event_date=(event_date or "").strip(),
+            location=(location or "").strip(),
+            description=(description or "").strip(),
         )
-        
         collection = MongoDB.get_events_collection()
         collection.insert_one(event.to_dict())
-        
+        invalidate(_EVENTS_CACHE_KEY)
         return event
-    
+
     @staticmethod
-    def update_event(event: 'Event'):
-        """Aktualisiert ein Event"""
+    @_guard
+    def update_event(event: "Event"):
         collection = MongoDB.get_events_collection()
-        
-        # Update
         collection.update_one(
-            {'id': event.id},
-            {'$set': event.to_dict()},
-            upsert=True
+            {"id": event.id},
+            {"$set": event.to_dict()},
+            upsert=True,
         )
-    
+        invalidate(_EVENTS_CACHE_KEY)
+
     @staticmethod
-    def get_event_by_id(event_id: str) -> Optional['Event']:
-        """Holt ein Event anhand der ID"""
-        from models import Event
-        
+    @_guard
+    def update_event_fields(event: "Event", fields):
+        values = event.to_dict()
+        result = MongoDB.get_events_collection().update_one(
+            {"id": event.id}, {"$set": {field: values[field] for field in fields}}
+        )
+        if not result.matched_count:
+            raise ValueError("event_not_found")
+        invalidate(_EVENTS_CACHE_KEY)
+
+    @staticmethod
+    @_guard
+    def mark_revealed(event_id: str, user_id: str) -> bool:
         collection = MongoDB.get_events_collection()
-        doc = collection.find_one({'id': event_id})
-        
-        if doc:
-            doc.pop('_id', None)
-            return Event.from_dict(doc)
-        return None
-    
+        result = collection.update_one(
+            {"id": event_id, "assignments.giver_id": user_id},
+            {"$set": {"assignments.$.revealed": True}},
+        )
+        invalidate(_EVENTS_CACHE_KEY)
+        return result.matched_count > 0
+
     @staticmethod
+    @_guard
     def delete_event(event_id: str):
-        """Löscht ein Event"""
         collection = MongoDB.get_events_collection()
-        collection.delete_one({'id': event_id})
-    
+        collection.delete_one({"id": event_id})
+        invalidate(_EVENTS_CACHE_KEY)
+
     @staticmethod
-    def get_events_by_participant(user_id: str) -> List['Event']:
-        """Findet alle Events, an denen ein Benutzer teilnimmt"""
+    @_guard
+    def get_event_by_id(event_id: str) -> Optional["Event"]:
         from models import Event
-        
+
         collection = MongoDB.get_events_collection()
-        
-        # Suche nach Events wo user_id in participant_ids oder created_by ist
-        docs = collection.find({
-            '$or': [
-                {'participant_ids': user_id},
-                {'created_by': user_id}
-            ]
-        })
-        
+        doc = collection.find_one({"id": event_id})
+        if not doc:
+            return None
+        doc.pop("_id", None)
+        return Event.from_dict(doc)
+
+    @staticmethod
+    @_guard
+    def get_events_by_participant(user_id: str) -> List["Event"]:
+        from models import Event
+
+        collection = MongoDB.get_events_collection()
+        docs = collection.find(
+            {"$or": [{"participant_ids": user_id}, {"created_by": user_id}]}
+        )
         events = []
         for doc in docs:
-            doc.pop('_id', None)
+            doc.pop("_id", None)
             events.append(Event.from_dict(doc))
-        
-        # Sortiere nach Erstellungsdatum (neueste zuerst)
-        events.sort(key=lambda e: e.created_at, reverse=True)
-        
+        events.sort(key=lambda item: item.created_at, reverse=True)
         return events
 
 
-# Hilfsfunktion für Migration von JSON zu MongoDB
 def migrate_json_to_mongodb():
-    """
-    Migriert Daten von JSON-Files zu MongoDB
-    Einmalig ausführen beim Umstieg
-    """
+    """Einmalige Migration von JSON-Dateien nach MongoDB."""
     import json
-    from models import User, Event
-    
-    # Importiere config lokal
-    import sys
-    import os
-    sys.path.insert(0, os.path.dirname(__file__))
-    from config import USERS_FILE, EVENTS_FILE
-    
-    print("🔄 Starte Migration von JSON zu MongoDB...")
-    
-    # Migriere Users
-    try:
-        with open(USERS_FILE, 'r', encoding='utf-8') as f:
-            users_data = json.load(f)
-            users = {uid: User.from_dict(data) for uid, data in users_data.items()}
-            MongoDataManager.save_users(users)
-            print(f"✅ {len(users)} Benutzer migriert")
-    except FileNotFoundError:
-        print("⚠️ users.json nicht gefunden - überspringe User-Migration")
-    
-    # Migriere Events
-    try:
-        with open(EVENTS_FILE, 'r', encoding='utf-8') as f:
-            events_data = json.load(f)
-            events = {eid: Event.from_dict(data) for eid, data in events_data.items()}
-            MongoDataManager.save_events(events)
-            print(f"✅ {len(events)} Events migriert")
-    except FileNotFoundError:
-        print("⚠️ events.json nicht gefunden - überspringe Event-Migration")
-    
-    print("✨ Migration abgeschlossen!")
 
+    from config import EVENTS_FILE, USERS_FILE
+    from models import Event, User
 
-# Initialisiere Standard-Benutzer wenn DB leer ist
-def init_default_users():
-    """Erstellt Standard-Benutzer wenn die Datenbank leer ist"""
-    from models import User
-    
-    users = MongoDataManager.load_users()
-    
-    if not users:
-        print("📝 Erstelle Standard-Benutzer...")
-        default_users = {
-            "user1": User(
-                id="user1",
-                name="Anna Schmidt",
-                email="anna@test.de",
-                password="temp123",
-                is_admin=True,
-                password_changed=False
-            ),
-            "user2": User(
-                id="user2",
-                name="Max Müller",
-                email="max@test.de",
-                password="temp123",
-                is_admin=False,
-                password_changed=False
-            ),
-            "user3": User(
-                id="user3",
-                name="Lisa Weber",
-                email="lisa@test.de",
-                password="temp123",
-                is_admin=False,
-                password_changed=False
-            ),
-            "user4": User(
-                id="user4",
-                name="Tom Fischer",
-                email="tom@test.de",
-                password="temp123",
-                is_admin=False,
-                password_changed=False
-            ),
-            "user5": User(
-                id="user5",
-                name="Sarah Klein",
-                email="sarah@test.de",
-                password="temp123",
-                is_admin=False,
-                password_changed=False
-            )
-        }
-        MongoDataManager.save_users(default_users)
-        print(f"✅ {len(default_users)} Standard-Benutzer erstellt")
+    print("Starte Migration von JSON nach MongoDB...")
+
+    try:
+        with open(USERS_FILE, "r", encoding="utf-8") as fh:
+            users_data = json.load(fh)
+        users = {uid: User.from_dict(data) for uid, data in users_data.items()}
+        for user in users.values():
+            if not is_password_hash(user.password):
+                user.password = hash_password(user.password)
+        MongoDataManager.save_users(users)
+        print(f"{len(users)} Benutzer migriert")
+    except FileNotFoundError:
+        print("users.json nicht gefunden - überspringe Benutzer")
+
+    try:
+        with open(EVENTS_FILE, "r", encoding="utf-8") as fh:
+            events_data = json.load(fh)
+        events = {eid: Event.from_dict(data) for eid, data in events_data.items()}
+        MongoDataManager.save_events(events)
+        print(f"{len(events)} Events migriert")
+    except FileNotFoundError:
+        print("events.json nicht gefunden - überspringe Events")
+
+    print("Migration abgeschlossen.")
 
 
 if __name__ == "__main__":
-    # Test-Skript
-    print("🧪 Teste MongoDB-Verbindung...")
-    
+    import sys
+
+    if "--migrate" in sys.argv:
+        migrate_json_to_mongodb()
+        raise SystemExit(0)
+
+    print("Teste MongoDB-Verbindung...")
     try:
-        # Teste Verbindung
         client = MongoDB.get_client()
-        client.admin.command('ping')
-        print("✅ MongoDB-Verbindung erfolgreich!")
-        
-        # Initialisiere Standard-Benutzer
-        init_default_users()
-        
-        # Zeige Statistiken
+        client.admin.command("ping")
+        print("MongoDB-Verbindung erfolgreich.")
+
         users = MongoDataManager.load_users()
         events = MongoDataManager.load_events()
-        print(f"\n📊 Aktuelle Datenbank:")
-        print(f"   👥 Benutzer: {len(users)}")
-        print(f"   🎄 Events: {len(events)}")
-        
-    except Exception as e:
-        print(f"❌ Fehler: {e}")
-        print("\n💡 Stelle sicher, dass MongoDB läuft:")
-        print("   - Lokal: mongod")
-        print("   - Oder setze MONGODB_URI in .env")
+        print(f"Benutzer: {len(users)}")
+        print(f"Events: {len(events)}")
+    except Exception as exc:
+        print(f"Fehler: {exc}")
+        print("Prüfe MONGODB_URI und ob die Datenbank erreichbar ist.")
     finally:
         MongoDB.close()

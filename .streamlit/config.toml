@@ -1,0 +1,22 @@
+# Streamlit-Theme für die Wichtel-App
+[theme]
+font = "sans serif"
+
+[theme.light]
+primaryColor = "#B3261E"
+backgroundColor = "#F8FBF9"
+secondaryBackgroundColor = "#F0F6F2"
+textColor = "#20332A"
+
+[theme.dark]
+primaryColor = "#F18F86"
+backgroundColor = "#151C18"
+secondaryBackgroundColor = "#26312A"
+textColor = "#EEF3EC"
+
+[browser]
+gatherUsageStats = false
+
+# Für Teilnehmer: kein "Deploy"-/Entwicklermenü in der Toolbar.
+[client]
+toolbarMode = "viewer"

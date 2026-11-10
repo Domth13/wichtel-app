@@ -5,7 +5,16 @@ Lädt Benutzer aus users_upload.json und speichert sie in der Datenbank
 import json
 import os
 import sys
+
 from dotenv import load_dotenv
+
+from security import hash_password, is_password_hash
+
+# Windows-Konsole: Emojis/UTF-8 ohne Crash ausgeben.
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
 
 # Lade Umgebungsvariablen
 load_dotenv()
@@ -77,8 +86,10 @@ def upload_users_from_json(filename: str = "users_upload.json"):
                 errors.append(f"User '{user_id}': Fehlende Felder: {', '.join(missing_fields)}")
                 continue
             
-            # Erstelle User-Objekt
+            # Erstelle User-Objekt und hashe Klartext-Passwörter.
             user = User.from_dict(user_data)
+            if not is_password_hash(user.password):
+                user.password = hash_password(user.password)
             users[user.id] = user
             
         except Exception as e:

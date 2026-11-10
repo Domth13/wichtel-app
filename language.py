@@ -1,83 +1,121 @@
 """
-Language and translation management for the Wichtel App.
+Sprachumschaltung und Übersetzungen für die Wichtel-App.
+
+Die automatische Browser-Erkennung wurde entfernt: Sie lief in einem
+iframe und war dadurch unzuverlässig. Stattdessen gibt es einen sichtbaren
+DE/EN-Umschalter; die Sprache wird zusätzlich in der URL gehalten.
 """
 import streamlit as st
-from streamlit.components.v1 import html
-import json
 
-# Define supported languages
 LANGUAGES = {
-    "en": "English",
     "de": "Deutsch",
+    "en": "English",
 }
 
+DEFAULT_LANGUAGE = "de"
+
+
 def init_language_support():
-    """
-    Initializes language support by detecting browser language.
-    Checks for a 'lang' query parameter first, then uses JavaScript
-    to get the browser language and re-run the app with the parameter.
-    """
-    if 'language' in st.session_state:
+    """Liest die Sprache aus ?lang=... oder setzt Deutsch als Standard."""
+    if "language" in st.session_state:
         return
 
-    query_params = st.query_params
-    lang_from_query = query_params.get("lang")
+    lang_from_query = st.query_params.get("lang")
+    if isinstance(lang_from_query, list):
+        lang_from_query = lang_from_query[0] if lang_from_query else None
+    lang_code = str(lang_from_query).split("-")[0].lower() if lang_from_query else ""
 
-    if lang_from_query:
-        lang_code = lang_from_query[0] if isinstance(lang_from_query, list) else lang_from_query
-        lang_code = lang_code.split('-')[0].lower()
-        if lang_code in LANGUAGES:
-            st.session_state.language = lang_code
-            return
-
-    # If no valid lang parameter, use JS to get it and reload
-    js_code = f'''
-        <script>
-            (function() {{
-                if (!window.location.search.includes('lang=')) {{
-                    const lang = navigator.language || navigator.userLanguage;
-                    const mainLang = lang.split('-')[0];
-                    const supportedLangs = {json.dumps(list(LANGUAGES.keys()))};
-                    let targetLang = 'de'; # default
-                    if (supportedLangs.includes(mainLang)) {{
-                        targetLang = mainLang;
-                    }}
-                    
-                    const url = new URL(window.location);
-                    url.searchParams.set('lang', targetLang);
-                    window.location.href = url.href;
-                }}
-            }})();
-        </script>
-    '''
-    html(js_code, height=0)
-    st.session_state.language = "de" # Default while JS runs
+    st.session_state.language = lang_code if lang_code in LANGUAGES else DEFAULT_LANGUAGE
 
 
-# Translation dictionary
-# Add all user-facing strings here
+def get_current_language() -> str:
+    return st.session_state.get("language", DEFAULT_LANGUAGE)
+
+
+def set_language(lang_code: str):
+    """Setzt die Sprache und hält sie in der URL."""
+    if lang_code not in LANGUAGES:
+        return
+    st.session_state.language = lang_code
+    try:
+        st.query_params["lang"] = lang_code
+    except Exception:
+        # In seltenen Umgebungen (z. B. Tests) nicht kritisch.
+        pass
+
+
 TRANSLATIONS = {
     "de": {
         "app_title": "Wichtel App",
         "app_slogan": "Frohe Weihnachten und viel Spaß beim Wichteln!",
-        "admin_login": "Admin Login",
+        "admin_login": "Admin-Login",
         "email_label": "E-Mail",
         "password_label": "Passwort",
         "login_button": "Anmelden",
         "invalid_credentials": "Anmeldedaten sind ungültig.",
+        "too_many_login_attempts": "Zu viele Fehlversuche. Bitte in einer Minute erneut versuchen.",
         "welcome": "Willkommen, {name}!",
         "change_password_header": "Passwort ändern",
         "change_password_info": "Bitte wähle ein neues Passwort für deinen Account.",
+        "account_settings": "Mein Konto / Passwort ändern",
+        "account_settings_hint": "Hier kannst du dein Admin-Passwort ändern.",
+        "empty_events_title": "Noch kein Wichtel-Event",
+        "empty_events_text": "Lege oben dein erstes Event an – mit Datum, Geschenkwert und Teilnehmern.",
+        "tab_overview": "Übersicht",
+        "tab_invites": "Einladungen",
+        "tab_edit": "Bearbeiten",
+        "reveal_hint": "Psst – nicht verraten!",
+        "event_locked": "Das Event ist gestartet und kann nicht mehr bearbeitet werden.",
+        "delete_started_hint": "Event und Zuweisungen werden dauerhaft gelöscht.",
+        "tab_events": "Events",
+        "tab_people": "Teilnehmer",
+        "tab_account": "Konto",
+        "admin_greeting": "Hallo {name}!",
+        "admin_dashboard_subtitle": "Alles für dein Wichteln an einem Ort.",
+        "next_step": "Nächster Schritt",
+        "next_step_empty_title": "Das erste Event wartet",
+        "next_step_empty_text": "Lege ein Event an und wähle die Teilnehmer aus.",
+        "next_step_wait_title": "Einladungen vorbereiten",
+        "next_step_wait_text": "Öffne dein Event und teile die Links oder sende die Einladungen.",
+        "next_step_run_title": "Wichtel sind unterwegs",
+        "next_step_run_text": "{done} von {total} haben ihren Wichtel schon angesehen.",
+        "good_to_know": "Gut zu wissen",
+        "tip_links": "Einladungslinks bleiben gültig, bis du sie erneuerst oder deaktivierst.",
+        "tip_private": "Teilnehmer brauchen kein Konto – nur ihren persönlichen Link.",
+        "security_tips": "Sicherheit",
+        "security_tip_1": "Nutze ein Passwort mit mindestens 8 Zeichen.",
+        "security_tip_2": "Gib Einladungslinks nur direkt an die Teilnehmer weiter.",
+        "security_tip_3": "Bei Verdacht erneuerst du den Link direkt im Event.",
+        "event_details": "Details",
+        "detail_date": "Datum",
+        "pending_title": "Warten noch auf ihren Wichtel",
+        "all_seen": "Alle haben ihren Wichtel angesehen.",
+        "detail_location": "Ort",
+        "detail_gift": "Geschenkwert",
+        "detail_created_by": "Erstellt von",
+        "section_event": "Wichtel-Event",
+        "csv_name": "Name",
+        "csv_email": "E-Mail",
+        "csv_link": "Link",
+        "metric_events": "Events",
+        "metric_participants": "Teilnehmer",
+        "metric_started": "Gestartet",
+        "public_steps_title": "So funktioniert’s",
+        "public_step_1": "Einladungslink öffnen",
+        "public_step_2": "Event-Status sehen",
+        "public_step_3": "Wichtel anzeigen",
+        "current_password": "Aktuelles Passwort",
+        "password_wrong": "Das aktuelle Passwort ist falsch.",
         "account": "Account",
         "new_password": "Neues Passwort",
         "confirm_password": "Passwort bestätigen",
         "save_button": "Speichern",
         "password_empty": "Bitte gib ein Passwort ein.",
-        "password_too_short": "Passwort muss mindestens 6 Zeichen haben.",
+        "password_too_short": "Passwort muss mindestens 8 Zeichen haben.",
         "passwords_not_match": "Passwörter stimmen nicht überein.",
         "password_saved": "Passwort gespeichert. Viel Spaß!",
         "hello": "Hallo {name}!",
-        "no_events_yet": "Noch keine Events vorhanden.",
+        "no_events_yet": "Noch keine Events vorhanden. Lege oben dein erstes Wichtel-Event an.",
         "participants": "{count} Teilnehmer",
         "gift_value": "Wert: {value}",
         "started": "Gestartet",
@@ -92,32 +130,105 @@ TRANSLATIONS = {
         "event_title": "Event-Titel",
         "event_title_placeholder": "Weihnachtswichteln 2025",
         "gift_value_optional": "Wert der Geschenke (optional)",
-        "gift_value_placeholder": "z.B. ca. 15€",
+        "gift_value_placeholder": "z. B. ca. 15 €",
+        "event_date_label": "Datum (optional)",
+        "event_date_placeholder": "z. B. 24.12.2025, 18:00",
+        "event_location_label": "Ort (optional)",
+        "event_location_placeholder": "z. B. bei Anna",
+        "event_description_label": "Hinweis (optional)",
+        "event_description_placeholder": "z. B. Wichteln mit Abendessen",
         "select_participants": "Teilnehmer auswählen:",
+        "participants_placeholder": "Teilnehmer auswählen …",
         "participants_label": "Teilnehmer",
+        "include_self": "Ich wichtele selbst mit",
+        "no_other_participants": "Lege zuerst weitere Teilnehmer unter „Teilnehmer verwalten“ an.",
         "create_event_button": "Event erstellen",
-        "title_participants_missing": "Bitte Titel und mindestens einen Teilnehmer auswählen.",
+        "title_participants_missing": "Bitte Titel und mindestens zwei Teilnehmer angeben.",
+        "min_two_participants": "Ein Wichtel-Event braucht mindestens zwei Teilnehmer.",
+        "duplicate_participants": "Teilnehmer sind doppelt vorhanden. Bitte prüfe die Auswahl.",
         "event_created": "Event '{title}' erstellt.",
+        "event_updated": "Event '{title}' aktualisiert.",
         "back_to_list": "Zurück zur Liste",
         "logged_in_via_invite": "Angemeldet über Einladungslink.",
         "event_not_started": "Das Event wurde noch nicht gestartet.",
+        "event_not_started_help": "Du bekommst eine E-Mail, sobald es losgeht.",
+        "waiting_title": "Es geht bald los!",
+        "waiting_steps": "So geht es weiter:",
+        "step_1": "Einladung öffnen",
+        "step_2": "Warten, bis das Event startet",
+        "step_3": "Wichtel anzeigen und Geschenk besorgen",
         "start_assignments": "Wichtel-Zuweisungen starten",
-        "assignments_sent": "Zuweisungen erstellt und Mails versendet.",
+        "start_hint": "Die Zuweisungen werden zufällig erstellt. Danach sind keine Änderungen mehr möglich.",
+        "start_confirm": "Event wirklich starten? Die Zuweisungen können danach nicht mehr geändert werden.",
+        "start_now": "Ja, jetzt starten",
+        "event_started": "Event gestartet.",
+        "assignments_created": "Zuweisungen erstellt.",
+        "startmails_result": "Startmails: {sent} von {total} versendet.",
+        "email_failed_for": "Nicht versendet an: {emails}",
+        "send_invites": "Einladungen per E-Mail senden",
+        "invites_result": "Einladungen: {sent} von {total} versendet.",
+        "email_not_configured": "E-Mail-Versand ist nicht konfiguriert. Du kannst die Links unten kopieren.",
+        "sending": "Wird gesendet …",
         "show_my_wichtel": "Meinen Wichtel anzeigen",
         "you_wichtel_for": "Du wichtelst für:",
-        "event_information": "Event Informationen",
+        "reveal_hide": "Verbergen",
+        "reveal_show": "Wichtel wieder anzeigen",
+        "reveal_hidden": "Dein Wichtel ist verborgen.",
+        "not_participant": "Du bist bei diesem Event nicht als Teilnehmer eingetragen.",
+        "event_information": "Event-Informationen",
         "created_by": "Erstellt von",
         "unknown": "Unbekannt",
         "all_participants": "Alle Teilnehmer",
-        "manage_invite_links": "Einladungslinks verwalten",
+        "event_date_display": "Datum: {value}",
+        "event_location_display": "Ort: {value}",
+        "manage_invite_links": "Einladungslinks",
+        "show_invite_links": "Einladungslinks anzeigen",
+        "download_links_csv": "Links als CSV herunterladen",
         "refresh_link": "Link erneuern für {name}",
+        "disable_link": "Link deaktivieren",
+        "confirm_refresh_link": "Link für {name} wirklich erneuern? Der alte Link funktioniert danach nicht mehr.",
+        "confirm_disable_link": "Link für {name} wirklich deaktivieren?",
+        "yes": "Ja",
+        "no": "Nein",
         "link_refreshed": "Link erneuert.",
+        "no_active_link": "Kein aktiver Link vorhanden.",
+        "create_link": "Link erstellen",
+        "link_created": "Link erstellt.",
+        "link_disabled": "Link für {name} deaktiviert.",
+        "session_revoked": "Dein Link wurde erneuert oder ist nicht mehr gültig. Bitte verwende den neuen Link.",
+        "link_base_warning": "APP_URL ist nicht gesetzt oder zeigt auf localhost. Die Links funktionieren so nur lokal.",
+        "manage_participants": "Teilnehmer verwalten",
+        "add_participant": "Teilnehmer hinzufügen",
+        "add_participant_hint": "Personen, die beim Wichteln mitmachen.",
+        "name_label": "Name",
+        "add_button": "Hinzufügen",
+        "participant_added": "Teilnehmer {name} hinzugefügt.",
+        "participant_exists": "Diese E-Mail ist bereits vorhanden.",
+        "email_invalid": "Bitte eine gültige E-Mail-Adresse eingeben.",
+        "name_required": "Bitte einen Namen eingeben.",
+        "admin_badge": "Admin",
+        "edit_event": "Event bearbeiten",
+        "save_changes": "Änderungen speichern",
+        "progress_revealed": "{done} von {total} haben ihren Wichtel angesehen.",
         "logout_button": "Abmelden",
+        "landing_title": "Dein persönlicher Wichtel-Link",
+        "use_personal_link_info": "Du hast einen persönlichen Einladungslink bekommen? Öffne ihn einfach – dann gelangst du direkt zu deinem Wichtel-Event.",
+        "no_admin_configured": "Es ist noch kein Admin-Konto vorhanden. Bitte ADMIN_EMAIL und ADMIN_PASSWORD in den Streamlit-Secrets setzen.",
+        "admin_created": "Admin-Konto angelegt. Bitte jetzt anmelden.",
+        "storage_unavailable_title": "Die Daten sind gerade nicht erreichbar.",
+        "storage_unavailable_hint": "Die Datenbank schläft möglicherweise oder ist kurz nicht erreichbar. Bitte in ein paar Sekunden erneut versuchen.",
+        "retry_connection": "Erneut verbinden",
+        "event_not_found": "Event nicht gefunden",
+        "no_event_for_link": "Kein Event zu diesem Link gefunden.",
+        "event_unavailable_or_not_participant": "Dieses Event ist nicht mehr verfügbar oder du bist kein Teilnehmer.",
+        "invalid_invite_link": "Ungültiger oder deaktivierter Einladungslink.",
+        "no_user_for_link": "Kein Benutzer zu diesem Link gefunden.",
+        "language_selector_label": "Sprache",
         "email_invite_subject": "Einladung zum Wichtel-Event: {event_title}",
         "email_invite_heading": "Wichtel-Einladung!",
         "email_invite_subheading": "Du wurdest eingeladen!",
         "email_invite_body_hello": "Hallo!",
-        "email_invite_body_event": "Du wurdest zum Wichtel-Event <strong>\"{event_title}\"</strong> eingeladen!",
+        "email_invite_body_event": 'Du wurdest zum Wichtel-Event <strong>"{event_title}"</strong> eingeladen!',
         "email_invite_body_waiting": "Das Event wurde erstellt und wartet darauf, gestartet zu werden. Du erhältst eine weitere E-Mail, sobald die Wichtel-Zuweisungen erfolgt sind.",
         "email_invite_button": "Zum Event",
         "email_invite_footer": "Frohe Weihnachten und viel Spaß beim Wichteln!",
@@ -125,129 +236,222 @@ TRANSLATIONS = {
         "email_started_heading": "Los geht's!",
         "email_started_subheading": "Die Wichtel wurden zugewiesen!",
         "email_started_body_hello": "Hallo!",
-        "email_started_body_event": "Das Wichtel-Event <strong>\"{event_title}\"</strong> wurde gestartet!",
+        "email_started_body_event": 'Das Wichtel-Event <strong>"{event_title}"</strong> wurde gestartet!',
         "email_started_body_assignment": "Deine Wichtel-Zuweisung wartet auf dich. Klicke auf den Button unten, um zu erfahren, für wen du ein Geschenk besorgen darfst!",
         "email_started_button": "Meinen Wichtel zeigen!",
         "email_started_footer": "Viel Spaß beim Geschenke besorgen!",
         "gift_value_display": "Geschenkwert: {value}",
-        "invalid_invite_link": "Ungültiger oder deaktivierter Einladungslink.",
-        "no_user_for_link": "Kein Benutzer zu diesem Link gefunden.",
-        "use_personal_link_info": "Bitte verwende deinen persönlichen Einladungslink, um direkt zum Event zu gelangen.",
-        "admins_can_login_caption": "Admins können sich über den Login anmelden.",
-        "open_admin_login": "Admin-Login öffnen",
-        "event_not_found": "Event nicht gefunden",
-        "no_event_for_link": "Kein Event zu diesem Link gefunden.",
-        "event_unavailable_or_not_participant": "Dieses Event ist nicht mehr verfügbar oder du bist kein Teilnehmer.",
-        "language_selector_label": "Sprache",
     },
     "en": {
         "app_title": "Secret Santa App",
         "app_slogan": "Merry Christmas and have fun with Secret Santa!",
-        "admin_login": "Admin Login",
-        "email_label": "E-Mail",
+        "admin_login": "Admin login",
+        "email_label": "Email",
         "password_label": "Password",
-        "login_button": "Login",
+        "login_button": "Log in",
         "invalid_credentials": "Invalid credentials.",
+        "too_many_login_attempts": "Too many failed attempts. Please try again in a minute.",
         "welcome": "Welcome, {name}!",
-        "change_password_header": "Change Password",
+        "change_password_header": "Change password",
         "change_password_info": "Please choose a new password for your account.",
+        "account_settings": "My account / change password",
+        "account_settings_hint": "Change your admin password here.",
+        "empty_events_title": "No Secret Santa event yet",
+        "empty_events_text": "Create your first event above – with date, gift value, and participants.",
+        "tab_overview": "Overview",
+        "tab_invites": "Invitations",
+        "tab_edit": "Edit",
+        "reveal_hint": "Shh – don’t tell!",
+        "event_locked": "The event has started and can no longer be edited.",
+        "delete_started_hint": "The event and its assignments will be permanently deleted.",
+        "tab_events": "Events",
+        "tab_people": "Participants",
+        "tab_account": "Account",
+        "admin_greeting": "Hello {name}!",
+        "admin_dashboard_subtitle": "Everything for your Secret Santa in one place.",
+        "next_step": "Next step",
+        "next_step_empty_title": "Your first event is waiting",
+        "next_step_empty_text": "Create an event and choose the participants.",
+        "next_step_wait_title": "Prepare invitations",
+        "next_step_wait_text": "Open your event and share the links or send the invitations.",
+        "next_step_run_title": "Secret Santas are underway",
+        "next_step_run_text": "{done} of {total} have already viewed their Secret Santa.",
+        "good_to_know": "Good to know",
+        "tip_links": "Invitation links stay valid until you refresh or disable them.",
+        "tip_private": "Participants do not need an account – just their personal link.",
+        "security_tips": "Security",
+        "security_tip_1": "Use a password with at least 8 characters.",
+        "security_tip_2": "Only share invitation links directly with the participants.",
+        "security_tip_3": "If in doubt, refresh the link inside the event.",
+        "event_details": "Details",
+        "detail_date": "Date",
+        "pending_title": "Still waiting for their Secret Santa",
+        "all_seen": "Everyone has viewed their Secret Santa.",
+        "detail_location": "Location",
+        "detail_gift": "Gift value",
+        "detail_created_by": "Created by",
+        "section_event": "Secret Santa event",
+        "csv_name": "Name",
+        "csv_email": "Email",
+        "csv_link": "Link",
+        "metric_events": "Events",
+        "metric_participants": "Participants",
+        "metric_started": "Started",
+        "public_steps_title": "How it works",
+        "public_step_1": "Open the invitation link",
+        "public_step_2": "See the event status",
+        "public_step_3": "Reveal your Secret Santa",
+        "current_password": "Current password",
+        "password_wrong": "The current password is incorrect.",
         "account": "Account",
-        "new_password": "New Password",
-        "confirm_password": "Confirm Password",
+        "new_password": "New password",
+        "confirm_password": "Confirm password",
         "save_button": "Save",
         "password_empty": "Please enter a password.",
-        "password_too_short": "Password must be at least 6 characters long.",
+        "password_too_short": "Password must be at least 8 characters long.",
         "passwords_not_match": "Passwords do not match.",
         "password_saved": "Password saved. Have fun!",
         "hello": "Hello {name}!",
-        "no_events_yet": "No events available yet.",
+        "no_events_yet": "No events yet. Create your first Secret Santa event above.",
         "participants": "{count} participants",
         "gift_value": "Value: {value}",
         "started": "Started",
         "waiting": "Waiting",
-        "open_event": "Open Event",
+        "open_event": "Open event",
         "delete_button": "Delete",
         "confirm_delete_event": "Really delete event '{title}'?",
         "yes_delete": "Yes, delete",
         "cancel": "Cancel",
         "event_deleted": "Event deleted.",
-        "create_new_event": "Create New Event",
-        "event_title": "Event Title",
+        "create_new_event": "Create new event",
+        "event_title": "Event title",
         "event_title_placeholder": "Christmas Secret Santa 2025",
-        "gift_value_optional": "Gift Value (optional)",
-        "gift_value_placeholder": "e.g., approx. 15€",
+        "gift_value_optional": "Gift value (optional)",
+        "gift_value_placeholder": "e.g. around 15 €",
+        "event_date_label": "Date (optional)",
+        "event_date_placeholder": "e.g. 24 Dec 2025, 6 pm",
+        "event_location_label": "Location (optional)",
+        "event_location_placeholder": "e.g. at Anna's place",
+        "event_description_label": "Note (optional)",
+        "event_description_placeholder": "e.g. Secret Santa with dinner",
         "select_participants": "Select participants:",
+        "participants_placeholder": "Choose participants …",
         "participants_label": "Participants",
-        "create_event_button": "Create Event",
-        "title_participants_missing": "Please select a title and at least one participant.",
+        "include_self": "I want to take part myself",
+        "no_other_participants": "Add more participants under “Manage participants” first.",
+        "create_event_button": "Create event",
+        "title_participants_missing": "Please enter a title and at least two participants.",
+        "min_two_participants": "A Secret Santa event needs at least two participants.",
+        "duplicate_participants": "Participants are duplicated. Please check the selection.",
         "event_created": "Event '{title}' created.",
-        "back_to_list": "Back to List",
-        "logged_in_via_invite": "Logged in via invite link.",
+        "event_updated": "Event '{title}' updated.",
+        "back_to_list": "Back to list",
+        "logged_in_via_invite": "Signed in via invitation link.",
         "event_not_started": "The event has not started yet.",
-        "start_assignments": "Start Secret Santa Assignments",
-        "assignments_sent": "Assignments created and emails sent.",
+        "event_not_started_help": "You will receive an email as soon as it starts.",
+        "waiting_title": "It will start soon!",
+        "waiting_steps": "What happens next:",
+        "step_1": "Open the invitation",
+        "step_2": "Wait until the event starts",
+        "step_3": "Reveal your Secret Santa and buy a gift",
+        "start_assignments": "Start Secret Santa assignments",
+        "start_hint": "Assignments are created randomly. They cannot be changed afterwards.",
+        "start_confirm": "Really start the event? Assignments cannot be changed afterwards.",
+        "start_now": "Yes, start now",
+        "event_started": "Event started.",
+        "assignments_created": "Assignments created.",
+        "startmails_result": "Start emails: {sent} of {total} sent.",
+        "email_failed_for": "Not sent to: {emails}",
+        "send_invites": "Send invitations by email",
+        "invites_result": "Invitations: {sent} of {total} sent.",
+        "email_not_configured": "Email delivery is not configured. You can copy the links below.",
+        "sending": "Sending …",
         "show_my_wichtel": "Show my Secret Santa",
         "you_wichtel_for": "You are Secret Santa for:",
-        "event_information": "Event Information",
+        "reveal_hide": "Hide",
+        "reveal_show": "Show Secret Santa again",
+        "reveal_hidden": "Your Secret Santa is hidden.",
+        "not_participant": "You are not listed as a participant in this event.",
+        "event_information": "Event information",
         "created_by": "Created by",
         "unknown": "Unknown",
-        "all_participants": "All Participants",
-        "manage_invite_links": "Manage Invite Links",
+        "all_participants": "All participants",
+        "event_date_display": "Date: {value}",
+        "event_location_display": "Location: {value}",
+        "manage_invite_links": "Invitation links",
+        "show_invite_links": "Show invitation links",
+        "download_links_csv": "Download links as CSV",
         "refresh_link": "Refresh link for {name}",
+        "disable_link": "Disable link",
+        "confirm_refresh_link": "Really refresh the link for {name}? The old link will stop working.",
+        "confirm_disable_link": "Really disable the link for {name}?",
+        "yes": "Yes",
+        "no": "No",
         "link_refreshed": "Link refreshed.",
-        "logout_button": "Logout",
-        "email_invite_subject": "Invitation to Secret Santa Event: {event_title}",
-        "email_invite_heading": "Secret Santa Invitation!",
+        "no_active_link": "No active link.",
+        "create_link": "Create link",
+        "link_created": "Link created.",
+        "link_disabled": "Link for {name} disabled.",
+        "session_revoked": "Your link was refreshed or is no longer valid. Please use the new link.",
+        "link_base_warning": "APP_URL is not set or points to localhost. Links will only work locally.",
+        "manage_participants": "Manage participants",
+        "add_participant": "Add participant",
+        "add_participant_hint": "People who take part in the Secret Santa.",
+        "name_label": "Name",
+        "add_button": "Add",
+        "participant_added": "Participant {name} added.",
+        "participant_exists": "This email address already exists.",
+        "email_invalid": "Please enter a valid email address.",
+        "name_required": "Please enter a name.",
+        "admin_badge": "Admin",
+        "edit_event": "Edit event",
+        "save_changes": "Save changes",
+        "progress_revealed": "{done} of {total} have viewed their Secret Santa.",
+        "logout_button": "Log out",
+        "landing_title": "Your personal Secret Santa link",
+        "use_personal_link_info": "Got a personal invitation link? Just open it – it takes you straight to your Secret Santa event.",
+        "no_admin_configured": "No admin account exists yet. Please set ADMIN_EMAIL and ADMIN_PASSWORD in the Streamlit secrets.",
+        "admin_created": "Admin account created. Please log in now.",
+        "storage_unavailable_title": "The data is not reachable right now.",
+        "storage_unavailable_hint": "The database may be asleep or briefly unavailable. Please try again in a few seconds.",
+        "retry_connection": "Reconnect",
+        "event_not_found": "Event not found",
+        "no_event_for_link": "No event found for this link.",
+        "event_unavailable_or_not_participant": "This event is no longer available or you are not a participant.",
+        "invalid_invite_link": "Invalid or deactivated invitation link.",
+        "no_user_for_link": "No user found for this link.",
+        "language_selector_label": "Language",
+        "email_invite_subject": "Invitation to the Secret Santa event: {event_title}",
+        "email_invite_heading": "Secret Santa invitation!",
         "email_invite_subheading": "You have been invited!",
         "email_invite_body_hello": "Hello!",
-        "email_invite_body_event": "You have been invited to the Secret Santa event <strong>\"{event_title}\"</strong>!",
+        "email_invite_body_event": 'You have been invited to the Secret Santa event <strong>"{event_title}"</strong>!',
         "email_invite_body_waiting": "The event has been created and is waiting to be started. You will receive another email once the Secret Santa assignments have been made.",
-        "email_invite_button": "To the Event",
+        "email_invite_button": "Go to the event",
         "email_invite_footer": "Merry Christmas and have fun with Secret Santa!",
         "email_started_subject": "Your Secret Santa is waiting for you: {event_title}",
         "email_started_heading": "Let's go!",
         "email_started_subheading": "The Secret Santas have been assigned!",
         "email_started_body_hello": "Hello!",
-        "email_started_body_event": "The Secret Santa event <strong>\"{event_title}\"</strong> has started!",
+        "email_started_body_event": 'The Secret Santa event <strong>"{event_title}"</strong> has started!',
         "email_started_body_assignment": "Your Secret Santa assignment is waiting for you. Click the button below to find out who you get to buy a gift for!",
         "email_started_button": "Show my Secret Santa!",
         "email_started_footer": "Have fun buying gifts!",
-        "gift_value_display": "Gift Value: {value}",
-        "invalid_invite_link": "Invalid or deactivated invitation link.",
-        "no_user_for_link": "No user found for this link.",
-        "use_personal_link_info": "Please use your personal invitation link to go directly to the event.",
-        "admins_can_login_caption": "Admins can log in via the login form.",
-        "open_admin_login": "Open Admin Login",
-        "event_not_found": "Event not found",
-        "no_event_for_link": "No event found for this link.",
-        "event_unavailable_or_not_participant": "This event is no longer available or you are not a participant.",
-        "language_selector_label": "Language",
+        "gift_value_display": "Gift value: {value}",
     },
 }
 
 
 def get_translator():
-    """
-    Returns a translation function based on the current language in session state.
-    Initializes session state language if not set.
-    """
+    """Liefert eine Übersetzungsfunktion für die aktuelle Sprache."""
     if "language" not in st.session_state:
-        st.session_state.language = "de"  # Default language
+        st.session_state.language = DEFAULT_LANGUAGE
 
     lang_code = st.session_state.language
-    translations = TRANSLATIONS.get(lang_code, TRANSLATIONS["de"]) # Fallback to German
+    translations = TRANSLATIONS.get(lang_code, TRANSLATIONS[DEFAULT_LANGUAGE])
 
     def _(key, **kwargs):
-        """
-        Translates a given key.
-        Supports f-string like formatting with kwargs.
-        """
-        translated_string = translations.get(key, key) # Fallback to key if not found
-        return translated_string.format(**kwargs) if kwargs else translated_string
+        translated = translations.get(key, key)
+        return translated.format(**kwargs) if kwargs else translated
 
     return _
-
-def set_language(lang_code: str):
-    """Sets the current language in session state."""
-    if lang_code in LANGUAGES:
-        st.session_state.language = lang_code
