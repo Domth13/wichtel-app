@@ -34,7 +34,8 @@ from bootstrap import ensure_admin  # noqa: E402
 from flash import render_flash, set_flash  # noqa: E402
 from language import get_translator, init_language_support  # noqa: E402
 from link_service import LinkAuthService  # noqa: E402
-from models import DataManager  # noqa: E402
+from models import DataManager, USE_MONGODB  # noqa: E402
+from startup import prepare_link_storage  # noqa: E402
 from storage_cache import StorageUnavailableError, clear as clear_storage_cache  # noqa: E402
 from ui_components import (  # noqa: E402
     apply_christmas_theme,
@@ -211,18 +212,22 @@ def render_admin_view(user, _):
     )
 
     tab_events, tab_people, tab_account = st.tabs(
-        [_("tab_events"), _("tab_people"), _("tab_account")]
+        [_("tab_events"), _("tab_people"), _("tab_account")],
+        on_change="rerun",
     )
 
-    with tab_events:
-        show_event_list(user, _, events=events)
-        show_create_event_form(user, _, expanded=not events)
+    if tab_events.open:
+        with tab_events:
+            show_event_list(user, _, events=events)
+            show_create_event_form(user, _, expanded=not events)
 
-    with tab_people:
-        show_user_management(user, _)
+    if tab_people.open:
+        with tab_people:
+            show_user_management(user, _)
 
-    with tab_account:
-        show_account_settings(user, _)
+    if tab_account.open:
+        with tab_account:
+            show_account_settings(user, _)
 
 
 def render_participant_view(user, _):
@@ -249,7 +254,12 @@ def main():
     hero_rendered = False
 
     try:
-        ensure_admin()
+        if USE_MONGODB and _get_token_param() and not st.session_state.get("user"):
+            # Für einen neuen Teilnehmer-Link werden sowohl Benutzer als auch
+            # Events benötigt. MongoDB kann beide Lesezugriffe parallel laden.
+            prepare_link_storage(ensure_admin, DataManager.load_events)
+        else:
+            ensure_admin()
         handle_link_auth(_)
 
         if st.session_state.pop("bootstrap_created", False):

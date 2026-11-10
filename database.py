@@ -3,6 +3,7 @@ MongoDB-Datenbank-Layer für die Wichtel-App.
 """
 import logging
 import os
+import threading
 import uuid
 from dataclasses import asdict
 from datetime import datetime
@@ -41,18 +42,20 @@ class MongoDB:
     """MongoDB-Verbindungs-Manager (Singleton pro Prozess)."""
     _client: Optional[MongoClient] = None
     _db: Optional[Database] = None
+    _client_lock = threading.Lock()
 
     @classmethod
     def get_client(cls) -> MongoClient:
-        if cls._client is None:
-            cls._client = MongoClient(
-                DatabaseConfig.MONGODB_URI,
-                serverSelectionTimeoutMS=6000,
-                connectTimeoutMS=6000,
-                socketTimeoutMS=20000,
-                retryWrites=True,
-                appname="wichtel-app",
-            )
+        with cls._client_lock:
+            if cls._client is None:
+                cls._client = MongoClient(
+                    DatabaseConfig.MONGODB_URI,
+                    serverSelectionTimeoutMS=6000,
+                    connectTimeoutMS=6000,
+                    socketTimeoutMS=20000,
+                    retryWrites=True,
+                    appname="wichtel-app",
+                )
         return cls._client
 
     @classmethod

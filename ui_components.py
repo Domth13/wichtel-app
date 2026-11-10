@@ -433,6 +433,15 @@ div[data-testid="stTabs"] {
     background: var(--surface);
     color: var(--green);
 }
+/* Die wichtigste Aktion für Teilnehmer ist gut lesbar und leicht zu treffen. */
+div[data-testid="stElementContainer"][class*="st-key-reveal_"] button {
+    min-height: 3.5rem;
+    padding: .8rem 1rem;
+}
+div[data-testid="stElementContainer"][class*="st-key-reveal_"] button p {
+    font-size: 1.125rem;
+    line-height: 1.35;
+}
 .stButton button[kind="tertiary"],
 .stButton button[kind="tertiary"]:hover,
 div[data-testid="stTooltipIcon"] button[kind="tertiary"] {
@@ -1060,7 +1069,7 @@ div[data-testid="stMetricValue"] {
 
 def apply_christmas_theme():
     """Injiziert das weihnachtliche Theme."""
-    st.markdown(_THEME_CSS, unsafe_allow_html=True)
+    st.html(_THEME_CSS)
 
 
 # ---------------------------------------------------------------------------
@@ -2049,51 +2058,52 @@ def show_event_details(event: Event, user: User, _, admin_view: bool = False):
 
     users = DataManager.load_users()
 
-    with st.container(border=True):
-        title_html = (
-            f'<div class="event-title-row"><div class="event-hero-title">{html.escape(event.title)}</div>'
-            f'{_status_pill(event.is_started, _)}</div>'
-        )
-        if admin_view:
-            with st.container(horizontal=True, vertical_alignment="center", gap="small", wrap=False, key="event-heading"):
-                if st.button("←", key=f"back_{event.id}", help=_("back_to_list"), type="tertiary"):
-                    st.session_state.pop(f"confirm_start_{event.id}", None)
-                    st.session_state.current_event = None
-                    if "event" in st.query_params:
-                        del st.query_params["event"]
-                    st.rerun()
-                st.markdown(title_html, unsafe_allow_html=True, width="stretch")
-        else:
-            # Ein Teilnehmer benötigt hier keine horizontale Streamlit-Zeile:
-            # Der Titel kann so mit seinem Inhalt wachsen, ohne Scrollfläche.
-            st.markdown(title_html, unsafe_allow_html=True)
+    title_html = (
+        f'<div class="event-title-row"><div class="event-hero-title">{html.escape(event.title)}</div>'
+        f'{_status_pill(event.is_started, _)}</div>'
+    )
+    if admin_view:
+        with st.container(horizontal=True, vertical_alignment="center", gap="small", wrap=False, key="event-heading"):
+            if st.button("←", key=f"back_{event.id}", help=_("back_to_list"), type="tertiary"):
+                st.session_state.pop(f"confirm_start_{event.id}", None)
+                st.session_state.current_event = None
+                if "event" in st.query_params:
+                    del st.query_params["event"]
+                st.rerun()
+            st.markdown(title_html, unsafe_allow_html=True, width="stretch")
+    else:
+        st.markdown(title_html, unsafe_allow_html=True)
 
-        if event.description:
-            st.markdown(
-                f'<p class="event-description">{html.escape(event.description)}</p>',
-                unsafe_allow_html=True,
-            )
+    if event.description:
+        st.markdown(
+            f'<p class="event-description">{html.escape(event.description)}</p>',
+            unsafe_allow_html=True,
+        )
 
     if admin_view:
         overview_tab, invites_tab, edit_tab = st.tabs(
-            [_("tab_overview"), _("tab_invites"), _("tab_edit")]
+            [_("tab_overview"), _("tab_invites"), _("tab_edit")],
+            on_change="rerun",
         )
-        with overview_tab:
-            overview_main, overview_side = st.columns([2, 1], gap="large")
-            with overview_main:
-                _show_overview(event, user, users, _, admin_view=True)
-            with overview_side:
-                _show_details_card(event, users, _, admin_view=True)
-        with invites_tab:
-            _show_send_invites(event, _)
-            st.markdown('<div class="soft-divider"></div>', unsafe_allow_html=True)
-            _show_invite_links(event, users, _)
-        with edit_tab:
-            edit_main, edit_side = st.columns([2, 1], gap="large")
-            with edit_main:
-                _show_edit_event(event, user, users, _)
-            with edit_side:
-                _show_delete_event(event, _)
+        if overview_tab.open:
+            with overview_tab:
+                overview_main, overview_side = st.columns([2, 1], gap="large")
+                with overview_main:
+                    _show_overview(event, user, users, _, admin_view=True)
+                with overview_side:
+                    _show_details_card(event, users, _, admin_view=True)
+        if invites_tab.open:
+            with invites_tab:
+                _show_send_invites(event, _)
+                st.markdown('<div class="soft-divider"></div>', unsafe_allow_html=True)
+                _show_invite_links(event, users, _)
+        if edit_tab.open:
+            with edit_tab:
+                edit_main, edit_side = st.columns([2, 1], gap="large")
+                with edit_main:
+                    _show_edit_event(event, user, users, _)
+                with edit_side:
+                    _show_delete_event(event, _)
     else:
         _show_overview(event, user, users, _, admin_view=False)
         st.markdown('<div class="soft-divider"></div>', unsafe_allow_html=True)

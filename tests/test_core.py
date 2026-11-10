@@ -16,6 +16,7 @@ from link_service import build_invite_url
 from email_service import create_event_created_email, create_event_started_email
 from security import hash_password, is_password_hash, verify_password
 from security import clear_login_failures, login_allowed, record_login_failure
+from startup import prepare_link_storage
 from models import Assignment, DataManager, Event, JSONDataManager
 from wichtel_logic import WichtelLogic
 
@@ -81,6 +82,43 @@ class SecurityTests(unittest.TestCase):
     def test_empty(self):
         self.assertFalse(verify_password("", ""))
         self.assertFalse(verify_password("x", ""))
+
+
+class StartupTests(unittest.TestCase):
+    def test_link_reads_can_overlap(self):
+        from threading import Event as ThreadEvent
+
+        event_read_started = ThreadEvent()
+        bootstrap_started = ThreadEvent()
+
+        def load_events():
+            event_read_started.set()
+            if not bootstrap_started.wait(2):
+                raise AssertionError("Bootstrap did not start while events were loading")
+
+        def ensure_admin():
+            if not event_read_started.wait(2):
+                raise AssertionError("Events did not start loading before bootstrap")
+            bootstrap_started.set()
+
+        prepare_link_storage(ensure_admin, load_events)
+
+    def test_event_read_failure_is_propagated(self):
+        def fail():
+            raise RuntimeError("storage unavailable")
+
+        with self.assertRaisesRegex(RuntimeError, "storage unavailable"):
+            prepare_link_storage(lambda: None, fail)
+
+    def test_mongodb_client_is_shared_between_threads(self):
+        from concurrent.futures import ThreadPoolExecutor
+        from database import MongoDB
+
+        with patch.object(MongoDB, "_client", None), patch("database.MongoClient") as client:
+            with ThreadPoolExecutor(max_workers=8) as pool:
+                results = list(pool.map(lambda _: MongoDB.get_client(), range(16)))
+            client.assert_called_once()
+            self.assertTrue(all(result is client.return_value for result in results))
 
 
 class TranslationTests(unittest.TestCase):
