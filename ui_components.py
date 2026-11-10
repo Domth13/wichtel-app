@@ -556,8 +556,12 @@ div[data-testid="stVerticalBlock"]:has(> div .topbar-marker) > div[data-testid="
 .metrics-item { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 1rem; min-width: 0; }
 .metrics-label { color: var(--ink); font-size: .8rem; overflow-wrap: anywhere; }
 .metrics-value { color: var(--green); font-size: 2rem; font-weight: 700; line-height: 1.2; margin-top: .35rem; }
-.event-title-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
-.event-title-row .event-hero-title { overflow-wrap: anywhere; min-width: 0; }
+.event-title-row { display: flex; align-items: center; justify-content: space-between; gap: .75rem; flex-wrap: wrap; padding-bottom: 1rem; }
+.event-title-row .event-hero-title { flex: 1 1 12rem; min-width: 0; margin: 0; overflow-wrap: anywhere; }
+.event-title-row .pill { flex: 0 0 auto; }
+/* Die Admin-Zeile muss mit mehrzeiligen Titeln wachsen, statt einen eigenen
+   Scrollbereich für den horizontalen Streamlit-Container zu erzeugen. */
+div[data-testid="stHorizontalBlock"].st-key-event-heading { overflow: visible !important; }
 
 /* Inputs */
 div[data-baseweb="input"],
@@ -879,6 +883,7 @@ div[data-testid="stMetricValue"] {
 
 /* Mobile */
 @media (max-width: 700px) {
+    .event-title-row .pill { display: none; }
     .block-container {
         padding: 0.75rem 0.9rem 3rem;
     }
@@ -2045,18 +2050,23 @@ def show_event_details(event: Event, user: User, _, admin_view: bool = False):
     users = DataManager.load_users()
 
     with st.container(border=True):
-        with st.container(horizontal=True, vertical_alignment="center", gap="small", wrap=False):
-            if admin_view and st.button("←", key=f"back_{event.id}", help=_("back_to_list"), type="tertiary"):
-                st.session_state.pop(f"confirm_start_{event.id}", None)
-                st.session_state.current_event = None
-                if "event" in st.query_params:
-                    del st.query_params["event"]
-                st.rerun()
-            st.markdown(
-                f'<div class="event-title-row"><div class="event-hero-title">{html.escape(event.title)}</div>'
-                f'{_status_pill(event.is_started, _)}</div>',
-                unsafe_allow_html=True, width="stretch",
-            )
+        title_html = (
+            f'<div class="event-title-row"><div class="event-hero-title">{html.escape(event.title)}</div>'
+            f'{_status_pill(event.is_started, _)}</div>'
+        )
+        if admin_view:
+            with st.container(horizontal=True, vertical_alignment="center", gap="small", wrap=False, key="event-heading"):
+                if st.button("←", key=f"back_{event.id}", help=_("back_to_list"), type="tertiary"):
+                    st.session_state.pop(f"confirm_start_{event.id}", None)
+                    st.session_state.current_event = None
+                    if "event" in st.query_params:
+                        del st.query_params["event"]
+                    st.rerun()
+                st.markdown(title_html, unsafe_allow_html=True, width="stretch")
+        else:
+            # Ein Teilnehmer benötigt hier keine horizontale Streamlit-Zeile:
+            # Der Titel kann so mit seinem Inhalt wachsen, ohne Scrollfläche.
+            st.markdown(title_html, unsafe_allow_html=True)
 
         if event.description:
             st.markdown(
